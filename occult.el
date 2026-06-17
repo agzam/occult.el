@@ -420,6 +420,12 @@ are created and deactivates when the last fold is removed."
              (null (occult--overlays-in (point-min) (point-max))))
     (occult--mode -1)))
 
+(defun occult--determine-end ()
+  (let ((end (region-end)))
+    (if (= end (pos-eol))
+        (+ 1 end)
+      end)))
+
 ;;; Public commands
 
 ;;;###autoload
@@ -449,7 +455,8 @@ reactivate the region at the fold's original boundaries.
 Otherwise, do nothing."
   (interactive)
   (if (use-region-p)
-      (occult-hide-region (region-beginning) (region-end))
+      (occult-hide-region (region-beginning)
+                          (occult--determine-end))
     (if-let ((ov (occult--overlay-at-point)))
         (let ((beg (overlay-start ov))
               (end (overlay-end ov)))
