@@ -5,7 +5,7 @@
 ;; Author: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Maintainer: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Created: March 25, 2026
-;; Version: 0.1.0
+;; Version: 1.3.1
 ;; Keywords: convenience
 ;; Homepage: https://github.com/agzam/occult.el
 ;; Package-Requires: ((emacs "29.1"))
@@ -185,6 +185,15 @@ is not wasted on empty leading whitespace."
     (skip-chars-forward " \t\n\r\f\v" end)
     (point)))
 
+(defun occult--ellipsis (body-text)
+  "Return the ellipsis `before-string' for a body overlay hiding BODY-TEXT.
+The summary line needs a line break of its own only when the
+hidden text ends with one.  When the fold stops at end of line or
+mid-line, the buffer text after the fold already breaks the line,
+and a second break would render as an empty line under the summary."
+  (concat (propertize occult-ellipsis 'face 'occult-summary)
+          (if (string-suffix-p "\n" body-text) "\n" "")))
+
 (defun occult--content-hash (beg end)
   "Compute a SHA-256 hash of buffer text between BEG and END."
   (secure-hash 'sha256 (buffer-substring-no-properties beg end)))
@@ -209,10 +218,9 @@ carry a `before-string'.
 Returns the parent overlay."
   (let* ((head-split (occult--leading-whitespace beg end))
          (body-split (occult--visible-end head-split end))
-         (body-text (buffer-substring-no-properties body-split end))
          (indicator (propertize occult-indicator 'face 'occult-indicator))
-         (ellipsis (concat (propertize occult-ellipsis 'face 'occult-summary)
-                           (if (string-match-p "\n" body-text) "\n" "")))
+         (ellipsis (occult--ellipsis
+                    (buffer-substring-no-properties body-split end)))
          (parent (make-overlay beg end nil t nil))
          (head (make-overlay beg head-split nil t nil))
          (body (make-overlay body-split end nil t nil)))
@@ -277,13 +285,11 @@ When HIDE-P is non-nil, re-hide.  Otherwise, reveal."
   (if hide-p
       (let* ((parent (overlay-get body-ov 'occult-parent))
              (split (overlay-start body-ov))
-             (end (if parent (overlay-end parent) (overlay-end body-ov)))
-             (body-text (buffer-substring-no-properties split end))
-             (trailing (if (string-match-p "\n" body-text) "\n" "")))
+             (end (if parent (overlay-end parent) (overlay-end body-ov))))
         (overlay-put body-ov 'invisible 'occult)
         (overlay-put body-ov 'before-string
-                     (concat (propertize occult-ellipsis 'face 'occult-summary)
-                             trailing)))
+                     (occult--ellipsis
+                      (buffer-substring-no-properties split end))))
     (overlay-put body-ov 'invisible nil)
     (overlay-put body-ov 'before-string nil)))
 
@@ -331,13 +337,11 @@ Only restores folds whose content hash still matches."
                            (<= (overlay-end parent) (point)))))
     (when-let ((body (overlay-get parent 'occult-body)))
       (when (overlay-buffer body)
-        (let* ((body-text (buffer-substring-no-properties
-                           (overlay-start body) (overlay-end body)))
-               (trailing (if (string-match-p "\n" body-text) "\n" "")))
-          (overlay-put body 'invisible 'occult)
-          (overlay-put body 'before-string
-                       (concat (propertize occult-ellipsis 'face 'occult-summary)
-                               trailing)))))
+        (overlay-put body 'invisible 'occult)
+        (overlay-put body 'before-string
+                     (occult--ellipsis
+                      (buffer-substring-no-properties
+                       (overlay-start body) (overlay-end body))))))
     (setq occult--auto-reveal-ov nil)))
 
 (defun occult--auto-reveal-at-point ()
