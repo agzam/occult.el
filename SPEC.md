@@ -233,6 +233,13 @@ The head overlay hides `[beg, head-split)` and prepends the indicator via
 its `before-string`. The body overlay hides `[body-split, end)` and
 prepends `occult-ellipsis` via its `before-string`.
 
+The ellipsis ends with a line break only when the hidden text ends with
+one (`occult--ellipsis`). When the fold stops at end of line with the
+newline excluded, or mid-line, the buffer text after `end` breaks the
+line itself; a second break would render as an empty line under the
+summary. Creation, isearch re-hide, and auto-reveal re-hide all apply
+the same rule.
+
 `occult-summary-max-length` is measured from `head-split`, not from the
 region start, so leading whitespace does not consume any of the summary
 budget.
@@ -314,6 +321,11 @@ lost - which is the expected behavior.
 - Empty / whitespace-only region: silent no-op, returns `nil`
 - `beg >= end`: silent no-op, returns `nil`
 - Single-line region: works (collapses to truncated summary)
+- Region ending at end of line, newline excluded: the next line follows
+  the summary directly, with no empty line between; the fold keeps the
+  caller's exact bounds, so the newline stays visible buffer text
+- Selection made backward (mark after point): folds exactly like the
+  forward selection of the same span
 - Read-only buffers: folds can be created and revealed normally; 
   `occult-edit-region` opens a view-only session instead of an edit session
 - Buffers with no associated file: `occult-edit-region` works because the

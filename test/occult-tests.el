@@ -64,6 +64,22 @@
     (occult-test-with-buffer " \n\r\t"
       (expect (occult--leading-whitespace 1 5) :to-be 5))))
 
+;;; Ellipsis trailing newline
+
+(describe "occult--ellipsis"
+  (it "ends with a newline when the hidden text ends with one"
+    (expect (occult--ellipsis "\nLine 3\n")
+            :to-equal (concat occult-ellipsis "\n")))
+
+  (it "has no newline when the hidden text stops before its newline"
+    (expect (occult--ellipsis "\nLine 3") :to-equal occult-ellipsis))
+
+  (it "has no newline for a single-line body"
+    (expect (occult--ellipsis "rest of the line") :to-equal occult-ellipsis))
+
+  (it "has no newline for an empty body"
+    (expect (occult--ellipsis "") :to-equal occult-ellipsis)))
+
 ;;; Overlay creation - two-overlay structure
 
 (describe "occult-hide-region"
@@ -105,6 +121,23 @@
       (let* ((parent (occult--overlay-at-point))
              (body (occult-test--body-overlay parent)))
         (expect (overlay-get body 'before-string) :to-match "\\.\\.\\."))))
+
+  (it "omits the ellipsis newline when the fold stops at end of line"
+    ;; The newline after "Line 3" stays outside the fold and breaks the
+    ;; line by itself; a newline in the ellipsis would add an empty line.
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\nLine 4\n"
+      (occult-hide-region 8 21)
+      (goto-char 8)
+      (let ((body (occult-test--body-overlay (occult--overlay-at-point))))
+        (expect (overlay-get body 'before-string) :to-equal occult-ellipsis))))
+
+  (it "keeps the ellipsis newline when the fold ends after a newline"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\nLine 4\n"
+      (occult-hide-region 8 22)
+      (goto-char 8)
+      (let ((body (occult-test--body-overlay (occult--overlay-at-point))))
+        (expect (overlay-get body 'before-string)
+                :to-equal (concat occult-ellipsis "\n")))))
 
   (it "absorbs a fully-contained overlapping fold"
     (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
@@ -225,6 +258,39 @@
         (expect (length ovs) :to-equal 1)
         (expect (overlay-start (car ovs)) :to-equal 1)
         (expect (overlay-end (car ovs)) :to-equal 22))))
+
+  (it "folds a backward selection the same as a forward one"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\nLine 4\n"
+      (set-mark 21)
+      (goto-char 8)
+      (activate-mark)
+      (occult-toggle)
+      (let* ((parent (car (occult--overlays-in (point-min) (point-max))))
+             (body (occult-test--body-overlay parent)))
+        (expect (overlay-start parent) :to-equal 8)
+        (expect (overlay-end parent) :to-equal 21)
+        (expect (overlay-get body 'before-string) :to-equal occult-ellipsis))))
+
+  (it "collapses a selection that reaches point-max without a trailing newline"
+    (occult-test-with-buffer "Line 1\nLine 2"
+      (set-mark 8)
+      (goto-char (point-max))
+      (activate-mark)
+      (occult-toggle)
+      (let ((parent (car (occult--overlays-in (point-min) (point-max)))))
+        (expect (overlay-start parent) :to-equal 8)
+        (expect (overlay-end parent) :to-equal (point-max)))))
+
+  (it "collapses a selection that reaches the end of a narrowed buffer"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\nLine 4\n"
+      (narrow-to-region 8 21)
+      (set-mark 8)
+      (goto-char (point-max))
+      (activate-mark)
+      (occult-toggle)
+      (let ((parent (car (occult--overlays-in (point-min) (point-max)))))
+        (expect (overlay-start parent) :to-equal 8)
+        (expect (overlay-end parent) :to-equal 21))))
 
   (it "expands fold at point - removes both overlays"
     (occult-test-with-buffer "Line 1\nLine 2\n"
@@ -424,7 +490,33 @@
         ;; Re-hide
         (occult--isearch-reveal-temporary body t)
         (expect (overlay-get body 'invisible) :to-equal 'occult)
-        (expect (overlay-get body 'before-string) :to-be-truthy)))))
+        (expect (overlay-get body 'before-string) :to-be-truthy))))
+
+  (it "re-hides without the ellipsis newline when the fold stops at end of line"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\nLine 4\n"
+      (occult-hide-region 8 21)
+      (goto-char 8)
+      (let ((body (occult-test--body-overlay (occult--overlay-at-point))))
+        (occult--isearch-reveal-temporary body nil)
+        (occult--isearch-reveal-temporary body t)
+        (expect (overlay-get body 'before-string) :to-equal occult-ellipsis)))))
+
+;;; Auto-reveal re-hide
+
+(describe "occult--re-hide-auto-revealed"
+  (it "re-hides without the ellipsis newline when the fold stops at end of line"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\nLine 4\n"
+      (occult-hide-region 8 21)
+      (goto-char 8)
+      (let ((occult-auto-reveal 'expand))
+        (occult--auto-reveal-at-point)
+        (let ((body (occult-test--body-overlay occult--auto-reveal-ov)))
+          (expect (overlay-get body 'before-string) :to-be nil)
+          (goto-char 22)
+          (occult--re-hide-auto-revealed)
+          (expect (overlay-get body 'invisible) :to-equal 'occult)
+          (expect (overlay-get body 'before-string)
+                  :to-equal occult-ellipsis))))))
 
 ;;; Navigability
 
