@@ -35,8 +35,9 @@ buffer text.
 - Body overlay spans `[body-split, end)` where `body-split` is the first
   line break after `head-split`, the fold end, or
   `head-split + occult-summary-max-length` characters from `head-split`,
-  whichever comes first. It carries `invisible 'occult` and prepends the
-  ellipsis via `before-string`.
+  whichever comes first; `occult-summary-end-regexp` moves it earlier still
+  when it matches on that line after `head-split`. It carries
+  `invisible 'occult` and prepends the ellipsis via `before-string`.
 - The three overlays are linked: parent references body and head via
   `occult-body` / `occult-head`; head and body reference parent via
   `occult-parent`.
@@ -228,6 +229,16 @@ The visible portion of a folded region is live buffer text between
 - `head-split` = first non-whitespace position in the region (leading
   blank lines and other ASCII whitespace are hidden by the head overlay)
 - `body-split = min(line-end-from-head-split, end, head-split + occult-summary-max-length)`
+- `occult-summary-end-regexp`, when non-nil, cuts the summary shorter than
+  that: the start of its first match on the line after `head-split`, when
+  earlier than `body-split`, becomes `body-split`. The search runs to the
+  end of the line, not to the cap, so a marker the cap would split is
+  hidden whole. The search starts one character after `head-split`, so a
+  match there is skipped: a fold needs at least one visible character,
+  because point cannot rest on a fold that shows nothing and
+  `occult--overlay-at-point` finds nothing there either. The option keeps
+  a trailing status marker in the buffer text but out of the summary. It
+  is buffer-local when set.
 
 The head overlay hides `[beg, head-split)` and prepends the indicator via
 its `before-string`. The body overlay hides `[body-split, end)` and
@@ -247,6 +258,8 @@ budget.
 - Indicator: customizable via `occult-indicator`, default `"📎 "`
 - Ellipsis: customizable via `occult-ellipsis`, default `"..."`
 - Max length: customizable via `occult-summary-max-length`, default `80`
+- Early end: customizable via `occult-summary-end-regexp`, default `nil`,
+  buffer-local when set
 - The visible summary is not synthesized or copied - it is the actual
   underlying buffer text, navigable and selectable.
 
@@ -343,6 +356,7 @@ lost - which is the expected behavior.
 | `occult-indicator`          | `"📎 "`      | Prefix string for summary line            |
 | `occult-ellipsis`           | `"..."`      | Suffix string for summary line            |
 | `occult-summary-max-length` | `80`         | Max chars from first line to show         |
+| `occult-summary-end-regexp` | `nil`        | Regexp that ends the summary early        |
 | `occult-auto-reveal`        | `nil`        | Auto-reveal mode: nil, echo, or expand    |
 | `occult-lighter`            | `" Occ"`     | Mode-line lighter (internal mode)         |
 | `occult-edit-lighter`       | `" OccEdit"` | Mode-line lighter inside an edit session  |

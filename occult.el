@@ -5,7 +5,7 @@
 ;; Author: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Maintainer: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Created: March 25, 2026
-;; Version: 1.3.1
+;; Version: 1.4.0
 ;; Keywords: convenience
 ;; Homepage: https://github.com/agzam/occult.el
 ;; Package-Requires: ((emacs "29.1"))
@@ -55,6 +55,19 @@
 (defcustom occult-summary-max-length 80
   "Maximum number of characters from the first line to display in a fold."
   :type 'integer)
+
+(defcustom occult-summary-end-regexp nil
+  "Regexp that ends a fold's visible summary before the line does.
+When non-nil, the summary stops at the start of the first match on
+its line, so a trailing marker such as a status glyph stays in the
+buffer but out of the fold.  The search honors `case-fold-search'.
+The variable is buffer-local when set; set it from a mode hook of
+the buffers whose lines carry such a marker.
+
+A match at the very start of the summary is skipped: a fold with no
+visible text cannot be reached by point or by `occult-toggle'."
+  :type '(choice (const :tag "No cut" nil) regexp)
+  :local t)
 
 (defcustom occult-auto-reveal nil
   "How to automatically reveal folds when point enters them.
@@ -166,10 +179,24 @@ The result is capped at the end of the line containing BEG, the
 fold END, or BEG plus `occult-summary-max-length' characters,
 whichever comes first.  This means `occult-summary-max-length'
 is measured from the first non-whitespace character of the fold,
-so leading blank lines do not consume any of the budget."
+so leading blank lines do not consume any of the budget.
+
+`occult-summary-end-regexp' cuts the summary at the start of its
+first match on that line when that is earlier than the cap, even
+if the cap falls inside the match, so no part of a trailing marker
+shows.  The search starts one character after BEG to leave at
+least one character visible."
   (save-excursion
     (goto-char beg)
-    (min (line-end-position) end (+ beg occult-summary-max-length))))
+    (let* ((eol (line-end-position))
+           (limit (min eol end (+ beg occult-summary-max-length)))
+           (cut (and occult-summary-end-regexp
+                     (< beg eol)
+                     (save-match-data
+                       (goto-char (1+ beg))
+                       (and (re-search-forward occult-summary-end-regexp eol t)
+                            (match-beginning 0))))))
+      (if cut (min cut limit) limit))))
 
 (defun occult--leading-whitespace (beg end)
   "Return the first non-whitespace position in the range BEG..END.

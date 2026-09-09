@@ -46,7 +46,51 @@
 
   (it "does not exceed end"
     (occult-test-with-buffer "Hi\n"
-      (expect (occult--visible-end 1 3) :to-equal 3))))
+      (expect (occult--visible-end 1 3) :to-equal 3)))
+
+  (it "stops where occult-summary-end-regexp matches"
+    (let ((occult-summary-end-regexp " ✅"))
+      (occult-test-with-buffer "Called tool ✅ 0s\nSecond\n"
+        (expect (buffer-substring-no-properties 1 (occult--visible-end 1 (point-max)))
+                :to-equal "Called tool"))))
+
+  (it "keeps the line end when occult-summary-end-regexp does not match"
+    (let ((occult-summary-end-regexp " ✅"))
+      (occult-test-with-buffer "Short\nSecond line\n"
+        (expect (occult--visible-end 1 19) :to-equal 6))))
+
+  (it "ignores a match at the first character"
+    ;; Cutting there would leave nothing visible, and point cannot rest
+    ;; on a fold with no visible text.
+    (let ((occult-summary-end-regexp "✅"))
+      (occult-test-with-buffer "✅ tool call\n"
+        (expect (occult--visible-end 1 (point-max)) :to-equal (line-end-position)))))
+
+  (it "cuts at a later match when the first match is at the first character"
+    (let ((occult-summary-end-regexp "✅"))
+      (occult-test-with-buffer "✅ tool ✅ call\n"
+        (expect (buffer-substring-no-properties 1 (occult--visible-end 1 (point-max)))
+                :to-equal "✅ tool "))))
+
+  (it "caps at occult-summary-max-length before the regexp matches"
+    (let ((occult-summary-end-regexp " ✅")
+          (occult-summary-max-length 5))
+      (occult-test-with-buffer "This is a long line ✅ 0s\n"
+        (expect (occult--visible-end 1 (point-max)) :to-equal 6))))
+
+  (it "hides the whole marker when occult-summary-max-length falls inside it"
+    (let ((occult-summary-end-regexp " ✅ [0-9]+s")
+          (occult-summary-max-length 15))
+      (occult-test-with-buffer "Called tool ✅ 0s\n"
+        (expect (buffer-substring-no-properties 1 (occult--visible-end 1 (point-max)))
+                :to-equal "Called tool"))))
+
+  (it "makes occult-summary-end-regexp buffer-local when set"
+    (let ((occult-summary-end-regexp nil))
+      (with-temp-buffer
+        (setq occult-summary-end-regexp " ✅")
+        (expect (local-variable-p 'occult-summary-end-regexp) :to-be-truthy))
+      (expect (default-value 'occult-summary-end-regexp) :to-be nil))))
 
 
 ;;; Trim leading whitespace
@@ -234,7 +278,25 @@
                (body (occult-test--body-overlay parent))
                (head (occult-test--head-overlay parent)))
           (expect (overlay-end head) :to-equal 3)
-          (expect (overlay-start body) :to-equal 6))))))
+          (expect (overlay-start body) :to-equal 6)))))
+
+  (it "hides the tail occult-summary-end-regexp cuts off"
+    (let ((occult-summary-end-regexp " ✅"))
+      (occult-test-with-buffer "Called tool ✅ 0s\nhidden body\n"
+        (occult-hide-region (point-min) (point-max))
+        (let* ((parent (occult--overlay-at-point))
+               (body (occult-test--body-overlay parent)))
+          (expect (buffer-substring-no-properties
+                   (overlay-start parent) (overlay-start body))
+                  :to-equal "Called tool")))))
+
+  (it "keeps the caller's match data while occult-summary-end-regexp is searched"
+    (let ((occult-summary-end-regexp " ✅"))
+      (occult-test-with-buffer "Called tool ✅ 0s\nhidden body\n"
+        (re-search-forward "tool")
+        (let ((before (match-data t)))
+          (occult-hide-region (point-min) (point-max))
+          (expect (match-data t) :to-equal before))))))
 
 ;;; Toggle
 
