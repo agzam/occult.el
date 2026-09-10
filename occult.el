@@ -343,13 +343,17 @@ Stores position and content hash for later restoration."
 
 (defun occult--restore-overlays ()
   "Restore occult overlays after `revert-buffer'.
-Only restores folds whose content hash still matches."
+Only restores folds whose content hash still matches.  A range that
+already holds a fold is left alone: `insert-file-contents' replaces
+only the text that changed, so a fold over unchanged text outlives
+the revert with its overlays intact."
   (when occult--saved-overlays
     (dolist (entry occult--saved-overlays)
       (let ((beg (nth 0 entry))
             (end (nth 1 entry))
             (hash (nth 2 entry)))
         (when (and (<= end (point-max))
+                   (null (occult--overlays-in beg end))
                    (string= hash (occult--content-hash beg end)))
           (occult--create-overlay beg end))))
     (setq occult--saved-overlays nil)))
