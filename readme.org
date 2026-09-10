@@ -69,7 +69,7 @@ Press ~e~ with point on a fold (or call ~M-x occult-edit-region~) to open the fo
 | ~occult-edit-commit-key~      | ~"C-c C-c"~  | Key that commits an edit session        |
 | ~occult-edit-abort-key~       | ~"C-c C-k"~  | Key that aborts / closes an edit session|
 
-Set ~occult-summary-end-regexp~ where lines end with a marker that does not belong in the summary - a status glyph, an elapsed time. The variable is buffer-local when set. The summary stops at the start of the first match on its line, even when ~occult-summary-max-length~ would cut inside the match, while the buffer text keeps the marker. A match at the very start is skipped, so a fold always shows at least one character.
+Set ~occult-summary-end-regexp~ where lines end with a marker that does not belong in the summary - a status glyph, an elapsed time. The variable is buffer-local when set. The summary stops at the start of the first match on its line, even when ~occult-summary-max-length~ would cut inside the match, while the buffer text keeps the marker. Whatever follows the match on that line is hidden with it: the option ends the summary early, it does not cut the match out of the middle. A match at the very start is skipped, so a fold always shows at least one character.
 
 #+begin_src emacs-lisp
 (setq-local occult-summary-end-regexp " ✅")

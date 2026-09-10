@@ -60,9 +60,11 @@
   "Regexp that ends a fold's visible summary before the line does.
 When non-nil, the summary stops at the start of the first match on
 its line, so a trailing marker such as a status glyph stays in the
-buffer but out of the fold.  The search honors `case-fold-search'.
-The variable is buffer-local when set; set it from a mode hook of
-the buffers whose lines carry such a marker.
+buffer but out of the fold.  The match and the rest of the line go
+behind the fold with it - this ends the summary, it does not cut
+the match out of the middle of it.  The search honors
+`case-fold-search'.  The variable is buffer-local when set; set it
+from a mode hook of the buffers whose lines carry such a marker.
 
 A match at the very start of the summary is skipped: a fold with no
 visible text cannot be reached by point or by `occult-toggle'."

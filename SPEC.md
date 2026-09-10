@@ -233,7 +233,10 @@ The visible portion of a folded region is live buffer text between
   that: the start of its first match on the line after `head-split`, when
   earlier than `body-split`, becomes `body-split`. The search runs to the
   end of the line, not to the cap, so a marker the cap would split is
-  hidden whole. The search starts one character after `head-split`, so a
+  hidden whole. Text after the match on that line is hidden with it - the
+  body overlay is one span, so the option moves where the summary stops
+  and never removes a span from inside it. The search starts one
+  character after `head-split`, so a
   match there is skipped: a fold needs at least one visible character,
   because point cannot rest on a fold that shows nothing and
   `occult--overlay-at-point` finds nothing there either. The option keeps
