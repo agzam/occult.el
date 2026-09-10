@@ -50,9 +50,9 @@ Bind them however you like:
 
 Press ~e~ with point on a fold (or call ~M-x occult-edit-region~) to open the fold content in a separate indirect buffer. The base buffer's fold stays collapsed while you edit; changes propagate live because the text is shared. A header line shows the current commit and abort key bindings. When the base buffer is read-only the session opens in view mode with a single close key instead.
 
-#+begin_src
+#+begin_example
  Edit Occult Fold  │ C-c C-c commit │ C-c C-k abort
-#+end_src
+#+end_example
 
 - ~C-c C-c~ (customizable via ~occult-edit-commit-key~) - commit and close the indirect buffer, keeping user changes.
 - ~C-c C-k~ (customizable via ~occult-edit-abort-key~) - restore the original fold contents and close the indirect buffer.
