@@ -286,12 +286,12 @@ Returns the parent overlay."
 (defun occult--delete-fold (ov)
   "Delete fold OV and its associated body overlay."
   (when (and ov (overlay-buffer ov))
-    (when-let ((body (overlay-get ov 'occult-body)))
-      (when (overlay-buffer body)
-        (delete-overlay body)))
-    (when-let ((head (overlay-get ov 'occult-head)))
-      (when (overlay-buffer head)
-        (delete-overlay head)))
+    (when-let* ((body (overlay-get ov 'occult-body))
+                ((overlay-buffer body)))
+      (delete-overlay body))
+    (when-let* ((head (overlay-get ov 'occult-head))
+                ((overlay-buffer head)))
+      (delete-overlay head))
     (delete-overlay ov)))
 
 (defun occult--remove-overlay (ov)
@@ -366,19 +366,19 @@ the revert with its overlays intact."
               (live (overlay-buffer parent))
               (outside (or (< (point) (overlay-start parent))
                            (<= (overlay-end parent) (point)))))
-    (when-let ((body (overlay-get parent 'occult-body)))
-      (when (overlay-buffer body)
-        (overlay-put body 'invisible 'occult)
-        (overlay-put body 'before-string
-                     (occult--ellipsis
-                      (buffer-substring-no-properties
-                       (overlay-start body) (overlay-end body))))))
+    (when-let* ((body (overlay-get parent 'occult-body))
+                ((overlay-buffer body)))
+      (overlay-put body 'invisible 'occult)
+      (overlay-put body 'before-string
+                   (occult--ellipsis
+                    (buffer-substring-no-properties
+                     (overlay-start body) (overlay-end body)))))
     (setq occult--auto-reveal-ov nil)))
 
 (defun occult--auto-reveal-at-point ()
   "Temporarily reveal or describe the fold at point.
 Behavior depends on `occult-auto-reveal'."
-  (when-let ((parent (occult--overlay-at-point)))
+  (when-let* ((parent (occult--overlay-at-point)))
     (pcase occult-auto-reveal
       ('echo
        (message "%s"
@@ -387,10 +387,10 @@ Behavior depends on `occult-auto-reveal'."
                   (overlay-start parent) (overlay-end parent))
                  (* 5 (frame-width)) nil nil occult-ellipsis)))
       ('expand
-       (when-let ((body (overlay-get parent 'occult-body)))
-         (when (overlay-buffer body)
-           (overlay-put body 'invisible nil)
-           (overlay-put body 'before-string nil)))
+       (when-let* ((body (overlay-get parent 'occult-body))
+                   ((overlay-buffer body)))
+         (overlay-put body 'invisible nil)
+         (overlay-put body 'before-string nil))
        (setq occult--auto-reveal-ov parent)))))
 
 (defun occult--post-command ()
@@ -402,11 +402,11 @@ Behavior depends on `occult-auto-reveal'."
 
 (defun occult--evil-search-reveal (&rest _args)
   "After an evil search command, temporarily reveal the fold at point."
-  (when-let ((parent (occult--overlay-at-point)))
-    (when-let ((body (overlay-get parent 'occult-body)))
-      (when (overlay-buffer body)
-        (overlay-put body 'invisible nil)
-        (overlay-put body 'before-string nil)))
+  (when-let* ((parent (occult--overlay-at-point)))
+    (when-let* ((body (overlay-get parent 'occult-body))
+                ((overlay-buffer body)))
+      (overlay-put body 'invisible nil)
+      (overlay-put body 'before-string nil))
     (setq occult--auto-reveal-ov parent)))
 
 (defvar occult--evil-advised nil
@@ -485,7 +485,7 @@ Otherwise, do nothing."
   (interactive)
   (if (use-region-p)
       (occult-hide-region (region-beginning) (region-end))
-    (if-let ((ov (occult--overlay-at-point)))
+    (if-let* ((ov (occult--overlay-at-point)))
         (let ((beg (overlay-start ov))
               (end (overlay-end ov)))
           (occult--remove-overlay ov)
@@ -673,7 +673,10 @@ without touching the base buffer."
         (unwind-protect
             (progn
               (with-current-buffer src (insert original))
-              (replace-buffer-contents src))
+              ;; `replace-region-contents' takes a source buffer only
+              ;; from Emacs 31.1; the declared floor is 29.1.
+              (with-suppressed-warnings ((obsolete replace-buffer-contents))
+                (replace-buffer-contents src)))
           (kill-buffer src)))
       (occult-edit--close-session)
       (message "Occult edit aborted"))))
