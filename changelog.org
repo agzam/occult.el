@@ -12,6 +12,10 @@ Changes to the project, following Keep a Changelog conventions.
 
 All three default to nil or to what they were, so folds look the same until a buffer sets them.
 
+** Fixed
+- ~revert-buffer~ no longer duplicates folds whose text the revert left untouched. ~insert-file-contents~ replaces only the text that changed, so those folds outlive the revert with their overlays intact; the restore step now skips ranges that already hold a fold instead of recreating one on top. Auto-revert reverts with modes preserved, so every auto-revert used to double such folds.
+- ~make check-compile~ can fail again. It discarded the result of ~byte-compile-file~, so the CI leg exited 0 whatever it printed. With ~byte-compile-error-on-warn~ every warning now fails the build, which the obsolete ~when-let~ and ~if-let~ calls did on Emacs 31.1 until this release.
+
 * [1.3.1] - 2026-09-08
 
 ** Fixed

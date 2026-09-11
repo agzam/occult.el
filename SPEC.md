@@ -359,6 +359,10 @@ Folds survive `revert-buffer` (important for LLM chat buffers, eshell, etc.):
 - `after-revert-hook`: for each saved tuple, verify text at `(beg . end)`
   matches the stored hash. If yes, re-create the fold. If the hash does not
   match (or `end > point-max`), the fold is lost (graceful degradation).
+  A range that already holds a fold is skipped: `insert-file-contents`
+  replaces only the text that changed, so a fold over unchanged text
+  survives the revert with its overlays intact and must not be recreated
+  on top of itself.
 
 This works reliably for append-only buffers (LLM, eshell) where old content
 doesn't shift. For buffers that rebuild entirely (Dired `g`), folds are

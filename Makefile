@@ -36,7 +36,7 @@ check-compile: deps
 	--eval "(package-initialize)" \
 	--eval "(setq byte-compile-error-on-warn t)" \
 	--eval "(add-to-list 'load-path \".\")" \
-	--eval "(byte-compile-file \"occult.el\")"
+	--eval "(unless (byte-compile-file \"occult.el\") (kill-emacs 1))"
 
 compile:
 	@echo "Byte-compiling package files..."

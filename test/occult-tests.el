@@ -905,6 +905,36 @@ The edit buffer and base buffer are cleaned up at the end."
         (expect (overlay-end head) :to-equal 3)
         (expect (overlay-get head 'before-string) :to-match "📎")))))
 
+;;; Revert persistence
+
+(describe "occult--restore-overlays"
+  (it "does not duplicate a fold whose overlays survived the revert"
+    (occult-test-with-buffer "Hello world\nmore\n"
+      (occult-hide-region 1 (point-max))
+      (occult--save-overlays)
+      ;; No overlay deletion in between: `insert-file-contents' leaves
+      ;; unchanged text alone, so the fold's overlays outlive the revert.
+      (occult--restore-overlays)
+      (expect (occult-test--fold-count) :to-equal 1)))
+
+  (it "keeps one fold across revert-buffer of a file"
+    (let ((file (make-temp-file "occult-test-" nil nil "Hello world\nmore\n")))
+      (unwind-protect
+          (with-temp-buffer
+            (insert-file-contents file)
+            (setq buffer-file-name file)
+            (occult-hide-region 1 (point-max))
+            (revert-buffer t t t)
+            (expect (occult-test--fold-count) :to-equal 1)
+            (with-temp-file file (insert "Hello world\nmore\nappended\n"))
+            (revert-buffer t t t)
+            (expect (occult-test--fold-count) :to-equal 1)
+            (let ((parent (car (occult--overlays-in (point-min) (point-max)))))
+              (expect (overlay-start parent) :to-equal 1)
+              (expect (overlay-end parent) :to-equal 18))
+            (set-buffer-modified-p nil))
+        (delete-file file)))))
+
 ;;; Summary replacements
 
 (describe "occult-summary-replace-alist"
