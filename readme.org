@@ -50,23 +50,43 @@ Bind them however you like:
 
 Press ~e~ with point on a fold (or call ~M-x occult-edit-region~) to open the fold content in a separate indirect buffer. The base buffer's fold stays collapsed while you edit; changes propagate live because the text is shared. A header line shows the current commit and abort key bindings. When the base buffer is read-only the session opens in view mode with a single close key instead.
 
-#+begin_src
+#+begin_example
  Edit Occult Fold  │ C-c C-c commit │ C-c C-k abort
-#+end_src
+#+end_example
 
 - ~C-c C-c~ (customizable via ~occult-edit-commit-key~) - commit and close the indirect buffer, keeping user changes.
 - ~C-c C-k~ (customizable via ~occult-edit-abort-key~) - restore the original fold contents and close the indirect buffer.
 
 ** Customization
 
-| Variable                    | Default      | Description                             |
-|-----------------------------+--------------+-----------------------------------------|
-| ~occult-indicator~            | ~"📎 "~      | Prefix glyph for the fold summary       |
-| ~occult-ellipsis~             | ~"..."~      | Suffix shown where text is hidden       |
-| ~occult-summary-max-length~   | ~80~         | Max visible chars from the first line   |
-| ~occult-auto-reveal~          | ~nil~        | Auto-reveal mode: nil, echo, or expand  |
-| ~occult-edit-commit-key~      | ~"C-c C-c"~  | Key that commits an edit session        |
-| ~occult-edit-abort-key~       | ~"C-c C-k"~  | Key that aborts / closes an edit session|
+| Variable                     | Default   | Description                                    |
+|------------------------------+-----------+------------------------------------------------|
+| ~occult-indicator~             | ~"📎 "~     | Prefix glyph for the fold summary              |
+| ~occult-ellipsis~              | ~"..."~     | Suffix shown where text is hidden              |
+| ~occult-summary-max-length~    | ~80~        | Max visible chars from the first line          |
+| ~occult-summary-replace-alist~ | ~nil~       | Patterns the summary line displays differently |
+| ~occult-summary-line-prefix~   | ~nil~       | Prefix drawn at the start of the summary line  |
+| ~occult-auto-reveal~           | ~nil~       | Auto-reveal mode: nil, echo, or expand         |
+| ~occult-edit-commit-key~       | ~"C-c C-c"~ | Key that commits an edit session               |
+| ~occult-edit-abort-key~        | ~"C-c C-k"~ | Key that aborts / closes an edit session       |
+
+** Tidying up the summary line
+
+The first line of a folded region often carries something that is useful in place and noise in a summary: a status glyph, an elapsed time, a shell prompt, a block marker. Three options change what that line shows. All of them are buffer-local when set, because what counts as noise differs from buffer to buffer, and all default to nil, so folds look the same until you set one.
+
+~occult-summary-replace-alist~ displays every match of a regexp as something else:
+
+#+begin_src emacs-lisp
+(add-hook 'eca-chat-mode-hook
+          (lambda ()
+            (setq occult-summary-replace-alist '((" ✅ [0-9]+s" . "")))))
+#+end_src
+
+A fold whose first line reads ~Editing occult.el +8 -5 ✅ 0s~ then shows ~Editing occult.el +8 -5~. Nothing is cut: the rest of the line stays, and the buffer keeps the whole thing, so search, kill/yank and ~occult-edit-region~ still see the status. A replacement can use ~\1~ for a group of the match, or be a function called with the matched text.
+
+~occult-summary-line-prefix~ replaces the ~line-prefix~ the buffer draws at the start of that line. Modes draw indentation guides and collapsible-block markers there, and those are display properties rather than text, so no regexp can reach them. Setting the option to ~""~ drops the prefix from the summary line, and only from it.
+
+~occult-indicator~ is buffer-local when set, so folds in a chat buffer can carry a different glyph from folds in a log.
 
 ** Search integration
 

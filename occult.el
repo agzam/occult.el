@@ -5,7 +5,7 @@
 ;; Author: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Maintainer: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Created: March 25, 2026
-;; Version: 1.3.1
+;; Version: 1.4.0
 ;; Keywords: convenience
 ;; Homepage: https://github.com/agzam/occult.el
 ;; Package-Requires: ((emacs "29.1"))
@@ -45,8 +45,11 @@
   :prefix "occult-")
 
 (defcustom occult-indicator "📎 "
-  "Prefix string displayed before the summary text of a fold."
-  :type 'string)
+  "Prefix string displayed before the summary text of a fold.
+Buffer-local when set, so folds of different kinds of buffers can
+carry different glyphs."
+  :type 'string
+  :local t)
 
 (defcustom occult-ellipsis "..."
   "Suffix string appended to truncated fold summaries."
@@ -55,6 +58,40 @@
 (defcustom occult-summary-max-length 80
   "Maximum number of characters from the first line to display in a fold."
   :type 'integer)
+
+(defcustom occult-summary-replace-alist nil
+  "Replacements applied to the visible summary line of a fold.
+Each entry is (REGEXP . REPLACEMENT).  Every match of REGEXP on the
+summary line displays as REPLACEMENT instead: either a string, where
+`\\1' and friends stand for the groups of the match, or a function
+called with the matched text that returns a string.  The rest of the
+line is untouched.
+
+Only the display changes.  The buffer keeps the whole line, so search,
+copy and `occult-edit-region' still see the text the replacement
+covers.
+
+Entries apply in the order they are listed, and a match overlapping an
+earlier replacement is skipped.  The search honors `case-fold-search'.
+
+Buffer-local when set: what is noise in a chat buffer is not what is
+noise in a log."
+  :type '(alist :key-type regexp
+                :value-type (choice (string :tag "Replacement")
+                                    (function :tag "Function of the match")))
+  :local t)
+
+(defcustom occult-summary-line-prefix nil
+  "String drawn at the start of a fold's summary line.
+Overrides the `line-prefix' the buffer itself puts there - an
+indentation guide or a block marker that means nothing once the block
+is folded.  An empty string drops it.  Nil leaves whatever the buffer
+draws alone.
+
+Buffer-local when set."
+  :type '(choice (const :tag "Keep the buffer's own prefix" nil)
+                 (string :tag "Draw this instead"))
+  :local t)
 
 (defcustom occult-auto-reveal nil
   "How to automatically reveal folds when point enters them.
@@ -198,6 +235,62 @@ and a second break would render as an empty line under the summary."
   "Compute a SHA-256 hash of buffer text between BEG and END."
   (secure-hash 'sha256 (buffer-substring-no-properties beg end)))
 
+;;; Summary decoration
+
+(defun occult--summary-replacements (beg end)
+  "Return the replacement spans for the summary line between BEG and END.
+Each span is (START STOP TEXT): the buffer text from START to STOP
+displays as TEXT.  Spans come from `occult-summary-replace-alist'.  A
+match that starts inside the summary and runs past END is replaced up
+to END, the rest of it being behind the fold already."
+  (let ((eol (save-excursion (goto-char beg) (line-end-position)))
+        spans)
+    (save-excursion
+      (save-match-data
+        (pcase-dolist (`(,regexp . ,replacement) occult-summary-replace-alist)
+          (goto-char beg)
+          (let ((searching t))
+            (while (and searching (re-search-forward regexp eol t))
+              (let ((mb (match-beginning 0))
+                    (me (match-end 0)))
+                (cond
+                 ((<= end mb) (setq searching nil))
+                 ;; An empty match covers nothing to replace, and leaves
+                 ;; point where it was, so the search has to step over it.
+                 ((= mb me)
+                  (if (< (point) eol) (forward-char 1) (setq searching nil)))
+                 ;; A match reaching into an earlier replacement would
+                 ;; stack two display strings over the same text.
+                 ((cl-find-if (lambda (span)
+                                (and (< (nth 0 span) me) (< mb (nth 1 span))))
+                              spans))
+                 (t
+                  (push (list mb (min me end)
+                              (if (functionp replacement)
+                                  (funcall replacement (match-string 0))
+                                (match-substitute-replacement replacement t)))
+                        spans)))))))))
+    (nreverse spans)))
+
+(defun occult--decorate-summary (parent beg end)
+  "Give fold PARENT the overlays that shape its summary line.
+BEG is where the visible summary starts and END where it stops.  The
+overlays are stored on PARENT and die with it; they change what the
+line displays, never the text."
+  (let (ovs)
+    (when occult-summary-line-prefix
+      (let ((ov (make-overlay (overlay-start parent) end nil t nil)))
+        (overlay-put ov 'line-prefix occult-summary-line-prefix)
+        (push ov ovs)))
+    (pcase-dolist (`(,start ,stop ,text) (occult--summary-replacements beg end))
+      (let ((ov (make-overlay start stop nil t nil)))
+        (overlay-put ov 'display text)
+        (push ov ovs)))
+    (dolist (ov ovs)
+      (overlay-put ov 'occult-parent parent)
+      (overlay-put ov 'evaporate t))
+    (overlay-put parent 'occult-summary-overlays ovs)))
+
 ;;; Overlay lifecycle
 
 (defun occult--create-overlay (beg end)
@@ -214,6 +307,11 @@ BEG.  Keeping the indicator on a single overlay (head) gives a
 uniform rendering rule and avoids the ordering ambiguity that
 arises when two overlays starting at the same position both
 carry a `before-string'.
+
+`occult--decorate-summary' adds an overlay per
+`occult-summary-replace-alist' match and one for
+`occult-summary-line-prefix'; they hang off the parent and die with
+it.
 
 Returns the parent overlay."
   (let* ((head-split (occult--leading-whitespace beg end))
@@ -253,6 +351,7 @@ Returns the parent overlay."
     (overlay-put body 'isearch-open-invisible #'occult--isearch-reveal)
     (overlay-put body 'isearch-open-invisible-temporary
                  #'occult--isearch-reveal-temporary)
+    (occult--decorate-summary parent head-split body-split)
     (occult--ensure-mode)
     parent))
 
@@ -265,6 +364,9 @@ Returns the parent overlay."
     (when-let ((head (overlay-get ov 'occult-head)))
       (when (overlay-buffer head)
         (delete-overlay head)))
+    (dolist (summary-ov (overlay-get ov 'occult-summary-overlays))
+      (when (overlay-buffer summary-ov)
+        (delete-overlay summary-ov)))
     (delete-overlay ov)))
 
 (defun occult--remove-overlay (ov)

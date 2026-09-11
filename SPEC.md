@@ -40,6 +40,11 @@ buffer text.
 - The three overlays are linked: parent references body and head via
   `occult-body` / `occult-head`; head and body reference parent via
   `occult-parent`.
+- Summary overlays are optional extras over the visible line, one per
+  `occult-summary-replace-alist` match plus one for
+  `occult-summary-line-prefix`. The parent lists them in
+  `occult-summary-overlays` and they die with it. They change what the
+  line displays, never the text.
 - `buffer-invisibility-spec` includes `'occult` whenever the internal mode is
   active, so the head and body text is hidden from display.
 - `buffer-string` / `buffer-substring-no-properties` return the full original
@@ -179,6 +184,7 @@ Spans `[beg, end)`. Owns the face, keymap, and modification-hook.
 | `occult`             | `t` (marker for finding our overlays)                  |
 | `occult-body`        | Reference to the body overlay                          |
 | `occult-head`        | Reference to the head overlay                          |
+| `occult-summary-overlays` | List of the summary overlays, possibly empty      |
 | `face`               | `occult-summary`                                       |
 | `keymap`             | TAB/mouse-1 toggle the fold; `e` opens it for editing  |
 | `help-echo`          | "Press TAB to expand"                                  |
@@ -216,6 +222,21 @@ Spans `[body-split, end)`. Hides the tail of the fold.
 | `isearch-open-invisible`             | `occult--isearch-reveal`           |
 | `isearch-open-invisible-temporary`   | `occult--isearch-reveal-temporary` |
 
+### Summary overlays
+
+Created only when `occult-summary-replace-alist` or
+`occult-summary-line-prefix` is set in the buffer. A replacement overlay
+spans one match inside `[head-split, body-split)`; the line-prefix
+overlay spans `[beg, body-split)`, because the display engine reads
+`line-prefix` at the position that starts the screen line.
+
+| Property        | Value                                          |
+|-----------------|------------------------------------------------|
+| `occult-parent` | Back-reference to parent overlay               |
+| `display`       | Replacement text (replacement overlays)        |
+| `line-prefix`   | `occult-summary-line-prefix` (prefix overlay)  |
+| `evaporate`     | `t`                                            |
+
 ## Summary Line Format
 
 ```
@@ -244,11 +265,42 @@ the same rule.
 region start, so leading whitespace does not consume any of the summary
 budget.
 
-- Indicator: customizable via `occult-indicator`, default `"📎 "`
+- Indicator: customizable via `occult-indicator`, default `"📎 "`,
+  buffer-local when set
 - Ellipsis: customizable via `occult-ellipsis`, default `"..."`
 - Max length: customizable via `occult-summary-max-length`, default `80`
 - The visible summary is not synthesized or copied - it is the actual
   underlying buffer text, navigable and selectable.
+
+### Replacements
+
+`occult-summary-replace-alist` maps a regexp to what its matches should
+display as. Every match between `head-split` and `body-split` gets an
+overlay carrying the replacement as `display`; the rest of the line
+renders as it is. A replacement is a string, where `\1` and friends
+stand for groups of the match, or a function called with the matched
+text.
+
+- Entries apply in listing order, and a match overlapping an earlier
+  replacement is skipped, so two display strings never stack over the
+  same text.
+- A match that starts before `body-split` and ends after it is replaced
+  up to `body-split`; the rest of it is behind the fold already.
+- A regexp that matches the empty string replaces nothing: the search
+  steps over it rather than spinning in place.
+- The buffer text is untouched, so isearch, kill/yank, `buffer-string`
+  and `occult-edit-region` still see the full line. A search that lands
+  under a replacement shows the replacement, as anything with a
+  `display` property does.
+
+### Line prefix
+
+`occult-summary-line-prefix` overrides the `line-prefix` the buffer puts
+on the summary line - indentation guides, block markers and the like,
+which are display properties rather than text and so out of reach of a
+replacement. An empty string drops the prefix. The override stops at
+`body-split`, so the hidden lines keep theirs for when a fold is
+temporarily revealed.
 
 ## Faces
 
@@ -338,16 +390,18 @@ lost - which is the expected behavior.
 
 ## Customizable Variables
 
-| Variable                    | Default      | Description                               |
-|-----------------------------|--------------|-------------------------------------------|
-| `occult-indicator`          | `"📎 "`      | Prefix string for summary line            |
-| `occult-ellipsis`           | `"..."`      | Suffix string for summary line            |
-| `occult-summary-max-length` | `80`         | Max chars from first line to show         |
-| `occult-auto-reveal`        | `nil`        | Auto-reveal mode: nil, echo, or expand    |
-| `occult-lighter`            | `" Occ"`     | Mode-line lighter (internal mode)         |
-| `occult-edit-lighter`       | `" OccEdit"` | Mode-line lighter inside an edit session  |
-| `occult-edit-commit-key`    | `"C-c C-c"`  | Key that commits an edit session          |
-| `occult-edit-abort-key`     | `"C-c C-k"`  | Key that aborts / closes an edit session  |
+| Variable                       | Default      | Description                                  |
+|--------------------------------|--------------|----------------------------------------------|
+| `occult-indicator`             | `"📎 "`      | Prefix string for summary line, buffer-local |
+| `occult-ellipsis`              | `"..."`      | Suffix string for summary line               |
+| `occult-summary-max-length`    | `80`         | Max chars from first line to show            |
+| `occult-summary-replace-alist` | `nil`        | Patterns the summary line displays differently |
+| `occult-summary-line-prefix`   | `nil`        | Prefix drawn at the start of the summary line |
+| `occult-auto-reveal`           | `nil`        | Auto-reveal mode: nil, echo, or expand       |
+| `occult-lighter`               | `" Occ"`     | Mode-line lighter (internal mode)            |
+| `occult-edit-lighter`          | `" OccEdit"` | Mode-line lighter inside an edit session     |
+| `occult-edit-commit-key`       | `"C-c C-c"`  | Key that commits an edit session             |
+| `occult-edit-abort-key`        | `"C-c C-k"`  | Key that aborts / closes an edit session     |
 
 ## Package Metadata
 
