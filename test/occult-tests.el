@@ -958,6 +958,16 @@ The edit buffer and base buffer are cleaned up at the end."
       (expect (occult-test--summary-text (occult--overlay-at-point))
               :to-equal "CALLED TOOL: grep")))
 
+  (it "leaves the match alone when the function returns no string"
+    (occult-test-with-buffer "Called tool: grep\nbody\n"
+      (setq-local occult-summary-replace-alist
+                  `(("Called tool: " . ,(lambda (_match) 42))))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "Called tool: grep")
+      (expect (overlay-get (occult--overlay-at-point) 'occult-summary-overlays)
+              :to-equal nil)))
+
   (it "skips a match overlapping an earlier replacement"
     (occult-test-with-buffer "abcd\nbody\n"
       (setq-local occult-summary-replace-alist '(("abc" . "X") ("bcd" . "Y")))

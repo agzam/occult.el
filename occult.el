@@ -64,7 +64,8 @@ carry different glyphs."
 Each entry is (REGEXP . REPLACEMENT).  Every match of REGEXP on the
 summary line displays as REPLACEMENT instead: either a string, where
 `\\1' and friends stand for the groups of the match, or a function
-called with the matched text that returns a string.  The rest of the
+called with the matched text that returns a string.  A function
+returning anything else leaves its match as it is.  The rest of the
 line is untouched.
 
 Only the display changes.  The buffer keeps the whole line, so search,
@@ -265,11 +266,13 @@ to END, the rest of it being behind the fold already."
                                 (and (< (nth 0 span) me) (< mb (nth 1 span))))
                               spans))
                  (t
-                  (push (list mb (min me end)
-                              (if (functionp replacement)
+                  (let ((text (if (functionp replacement)
                                   (funcall replacement (match-string 0))
-                                (match-substitute-replacement replacement t)))
-                        spans)))))))))
+                                (match-substitute-replacement replacement t))))
+                    ;; Anything but a string in a `display' property fails
+                    ;; in redisplay, far from the function that returned it.
+                    (when (stringp text)
+                      (push (list mb (min me end) text) spans)))))))))))
     (nreverse spans)))
 
 (defun occult--decorate-summary (parent beg end)
