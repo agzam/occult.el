@@ -32,6 +32,26 @@
   "Get the head overlay associated with PARENT."
   (overlay-get parent 'occult-head))
 
+(defun occult-test--summary-text (parent)
+  "Return the text the summary line of PARENT puts on screen.
+Walks the visible part of the fold and takes the `display' string
+wherever a replacement covers the buffer text."
+  (let* ((body (overlay-get parent 'occult-body))
+         (pos (overlay-end (occult-test--head-overlay parent)))
+         (end (if (overlay-buffer body)
+                  (overlay-start body)
+                (overlay-end parent)))
+         parts)
+    (while (< pos end)
+      (let ((next (next-single-char-property-change pos 'display nil end))
+            (shown (get-char-property pos 'display)))
+        (push (if (stringp shown)
+                  shown
+                (buffer-substring-no-properties pos next))
+              parts)
+        (setq pos next)))
+    (apply #'concat (nreverse parts))))
+
 ;;; Visible end calculation
 
 (describe "occult--visible-end"
@@ -408,6 +428,24 @@
       (occult-hide-region 1 22)
       (expect (buffer-substring-no-properties 1 22)
               :to-equal "Line 1\nLine 2\nLine 3\n"))))
+
+;;; Fold keymap
+
+(describe "occult-overlay-map"
+  (it "toggles on both forms of the Tab key"
+    (expect (lookup-key occult-overlay-map (kbd "TAB")) :to-be #'occult-toggle)
+    (expect (lookup-key occult-overlay-map [tab]) :to-be #'occult-toggle))
+
+  (it "wins over the buffer's own binding for either form"
+    (occult-test-with-buffer "Hello\nWorld\n"
+      (use-local-map (let ((map (make-sparse-keymap)))
+                       (define-key map [tab] #'ignore)
+                       (define-key map (kbd "TAB") #'ignore)
+                       map))
+      (occult-hide-region 1 13)
+      (goto-char 1)
+      (expect (key-binding [tab]) :to-be #'occult-toggle)
+      (expect (key-binding "\t") :to-be #'occult-toggle))))
 
 ;;; Revert persistence
 
@@ -884,6 +922,226 @@ The edit buffer and base buffer are cleaned up at the end."
         (expect head :to-be-truthy)
         (expect (overlay-end head) :to-equal 3)
         (expect (overlay-get head 'before-string) :to-match "📎")))))
+
+;;; Revert persistence
+
+(describe "occult--restore-overlays"
+  (it "does not duplicate a fold whose overlays survived the revert"
+    (occult-test-with-buffer "Hello world\nmore\n"
+      (occult-hide-region 1 (point-max))
+      (occult--save-overlays)
+      ;; No overlay deletion in between: `insert-file-contents' leaves
+      ;; unchanged text alone, so the fold's overlays outlive the revert.
+      (occult--restore-overlays)
+      (expect (occult-test--fold-count) :to-equal 1)))
+
+  (it "keeps one fold across revert-buffer of a file"
+    (let ((file (make-temp-file "occult-test-" nil nil "Hello world\nmore\n")))
+      (unwind-protect
+          (with-temp-buffer
+            (insert-file-contents file)
+            (setq buffer-file-name file)
+            (occult-hide-region 1 (point-max))
+            (revert-buffer t t t)
+            (expect (occult-test--fold-count) :to-equal 1)
+            (with-temp-file file (insert "Hello world\nmore\nappended\n"))
+            (revert-buffer t t t)
+            (expect (occult-test--fold-count) :to-equal 1)
+            (let ((parent (car (occult--overlays-in (point-min) (point-max)))))
+              (expect (overlay-start parent) :to-equal 1)
+              (expect (overlay-end parent) :to-equal 18))
+            (set-buffer-modified-p nil))
+        (delete-file file)))))
+
+;;; Summary replacements
+
+(describe "occult-summary-replace-alist"
+  (it "leaves the summary alone when nil"
+    (occult-test-with-buffer "Reading MANIFEST.md ✅ 0s\nbody\n"
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "Reading MANIFEST.md ✅ 0s")))
+
+  (it "displays a match as its replacement"
+    (occult-test-with-buffer "Reading MANIFEST.md ✅ 0s\nbody\n"
+      (setq-local occult-summary-replace-alist '((" ✅ [0-9]+s" . "")))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "Reading MANIFEST.md")))
+
+  (it "keeps the text that follows the match"
+    (occult-test-with-buffer "Editing a.el +8 -5 ✅ 0s view diff\nbody\n"
+      (setq-local occult-summary-replace-alist '((" ✅ [0-9]+s" . "")))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "Editing a.el +8 -5 view diff")))
+
+  (it "leaves the buffer text as it was"
+    (occult-test-with-buffer "Reading MANIFEST.md ✅ 0s\nbody\n"
+      (setq-local occult-summary-replace-alist '((" ✅ [0-9]+s" . "")))
+      (occult-hide-region 1 (point-max))
+      (expect (buffer-substring-no-properties 1 25)
+              :to-equal "Reading MANIFEST.md ✅ 0s")))
+
+  (it "replaces every match on the line, not only the first"
+    (occult-test-with-buffer "a X b X c\nbody\n"
+      (setq-local occult-summary-replace-alist '(("X" . "-")))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "a - b - c")))
+
+  (it "applies entries in the order they are listed"
+    (occult-test-with-buffer "Thought 8s\nbody\n"
+      (setq-local occult-summary-replace-alist
+                  '(("Thought" . "think:") (" \\([0-9]+\\)s" . " [\\1]")))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "think: [8]")))
+
+  (it "takes a function of the matched text"
+    (occult-test-with-buffer "Called tool: grep\nbody\n"
+      (setq-local occult-summary-replace-alist
+                  `(("Called tool: " . ,(lambda (match) (upcase match)))))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "CALLED TOOL: grep")))
+
+  (it "leaves the match alone when the function returns no string"
+    (occult-test-with-buffer "Called tool: grep\nbody\n"
+      (setq-local occult-summary-replace-alist
+                  `(("Called tool: " . ,(lambda (_match) 42))))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "Called tool: grep")
+      (expect (overlay-get (occult--overlay-at-point) 'occult-summary-overlays)
+              :to-equal nil)))
+
+  (it "skips a match overlapping an earlier replacement"
+    (occult-test-with-buffer "abcd\nbody\n"
+      (setq-local occult-summary-replace-alist '(("abc" . "X") ("bcd" . "Y")))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "Xd")))
+
+  (it "steps over a regexp that matches the empty string"
+    (occult-test-with-buffer "empty match test\nbody\n"
+      (setq-local occult-summary-replace-alist '(("x*" . "#")))
+      (occult-hide-region 1 (point-max))
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "empty match test")))
+
+  (it "replaces up to the cap when the match runs past it"
+    (let ((occult-summary-max-length 13))
+      (occult-test-with-buffer "Called tool ✅ 0s\nbody\n"
+        (setq-local occult-summary-replace-alist '((" ✅ [0-9]+s" . "")))
+        (occult-hide-region 1 (point-max))
+        (expect (occult-test--summary-text (occult--overlay-at-point))
+                :to-equal "Called tool"))))
+
+  (it "ignores a match that starts past the cap"
+    (let ((occult-summary-max-length 11))
+      (occult-test-with-buffer "Called tool ✅ 0s\nbody\n"
+        (setq-local occult-summary-replace-alist '((" ✅ [0-9]+s" . "X")))
+        (occult-hide-region 1 (point-max))
+        (expect (occult-test--summary-text (occult--overlay-at-point))
+                :to-equal "Called tool"))))
+
+  (it "keeps the fold reachable when everything is replaced away"
+    (occult-test-with-buffer "all of it goes\nbody\n"
+      (setq-local occult-summary-replace-alist '((".*" . "")))
+      (occult-hide-region 1 (point-max))
+      (goto-char 1)
+      (expect (occult-test--summary-text (occult--overlay-at-point)) :to-equal "")
+      (expect (occult--overlay-at-point) :to-be-truthy)))
+
+  (it "does not disturb the caller's match data"
+    (occult-test-with-buffer "Reading MANIFEST.md ✅ 0s\nbody\n"
+      (setq-local occult-summary-replace-alist '((" ✅ [0-9]+s" . "")))
+      (goto-char (point-min))
+      (re-search-forward "MANIFEST")
+      (let ((start (match-beginning 0)))
+        (occult-hide-region 1 (point-max))
+        (expect (match-beginning 0) :to-equal start))))
+
+  (it "is buffer-local when set"
+    (occult-test-with-buffer "Reading MANIFEST.md ✅ 0s\nbody\n"
+      (setq occult-summary-replace-alist '((" ✅ [0-9]+s" . "")))
+      (expect (local-variable-p 'occult-summary-replace-alist) :to-be-truthy)
+      (expect (default-value 'occult-summary-replace-alist) :to-be nil))))
+
+;;; Summary line prefix
+
+(describe "occult-summary-line-prefix"
+  (it "replaces the prefix the buffer draws on the summary line"
+    (occult-test-with-buffer
+        (concat (propertize "Reading MANIFEST.md" 'line-prefix "⏵ ") "\nbody\n")
+      (setq-local occult-summary-line-prefix "")
+      (occult-hide-region 1 (point-max))
+      (expect (get-char-property 1 'line-prefix) :to-equal "")))
+
+  (it "keeps the buffer's prefix when nil"
+    (occult-test-with-buffer
+        (concat (propertize "Reading MANIFEST.md" 'line-prefix "⏵ ") "\nbody\n")
+      (occult-hide-region 1 (point-max))
+      (expect (get-char-property 1 'line-prefix) :to-equal "⏵ ")))
+
+  (it "stops at the end of the summary"
+    (occult-test-with-buffer
+        (concat (propertize "Reading MANIFEST.md\nbody\n" 'line-prefix "⏵ "))
+      (setq-local occult-summary-line-prefix "")
+      (occult-hide-region 1 (point-max))
+      (let ((body (occult-test--body-overlay (occult--overlay-at-point))))
+        (expect (get-char-property (overlay-start body) 'line-prefix)
+                :to-equal "⏵ ")))))
+
+;;; Per-buffer indicator
+
+(describe "occult-indicator"
+  (it "takes the value the buffer set"
+    (occult-test-with-buffer "Hello\nWorld\n"
+      (setq occult-indicator "⧟ ")
+      (occult-hide-region 1 13)
+      (expect (overlay-get (occult-test--head-overlay (occult--overlay-at-point))
+                           'before-string)
+              :to-match "⧟")
+      (expect (default-value 'occult-indicator) :to-equal "📎 "))))
+
+;;; Summary overlay lifecycle
+
+(describe "summary overlays"
+  (it "die with the fold"
+    (occult-test-with-buffer "Reading MANIFEST.md ✅ 0s\nbody\n"
+      (setq-local occult-summary-replace-alist '((" ✅ [0-9]+s" . ""))
+                  occult-summary-line-prefix "")
+      (occult-hide-region 1 (point-max))
+      (let* ((parent (occult--overlay-at-point))
+             (extras (overlay-get parent 'occult-summary-overlays)))
+        (expect (length extras) :to-equal 2)
+        (occult--delete-fold parent)
+        (expect (cl-remove-if-not #'overlay-buffer extras) :to-equal nil))))
+
+  (it "come back with the fold after a revert"
+    (occult-test-with-buffer "Reading MANIFEST.md ✅ 0s\nbody\n"
+      (setq-local occult-summary-replace-alist '((" ✅ [0-9]+s" . "")))
+      (occult-hide-region 1 (point-max))
+      (occult--save-overlays)
+      (dolist (ov (overlays-in (point-min) (point-max)))
+        (delete-overlay ov))
+      (occult--restore-overlays)
+      (goto-char 1)
+      (expect (occult-test--summary-text (occult--overlay-at-point))
+              :to-equal "Reading MANIFEST.md")))
+
+  (it "are gone from the indirect edit buffer"
+    ;; `let' on a variable with `:local t' binds the default, which the
+    ;; base buffer the macro makes has no local value to shadow.
+    (let ((occult-summary-replace-alist '((" ✅ [0-9]+s" . ""))))
+      (occult-test-with-edit-session "Reading MANIFEST.md ✅ 0s\nbody\n" 1 31
+        (expect (cl-remove-if-not
+                 (lambda (ov) (or (overlay-get ov 'occult)
+                                  (overlay-get ov 'occult-parent)))
+                 (overlays-in (point-min) (point-max)))
+                :to-equal nil)))))
 
 (provide 'occult-tests)
 
