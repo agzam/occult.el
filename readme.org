@@ -61,7 +61,7 @@ Press ~e~ with point on a fold (or call ~M-x occult-edit-region~) to open the fo
 
 | Variable                     | Default   | Description                                    |
 |------------------------------+-----------+------------------------------------------------|
-| ~occult-indicator~             | ~"📎 "~     | Prefix glyph for the fold summary              |
+| ~occult-indicator~             | ~"📎 "~     | Prefix glyph for the fold summary¹             |
 | ~occult-ellipsis~              | ~"..."~     | Suffix shown where text is hidden              |
 | ~occult-summary-max-length~    | ~80~        | Max visible chars from the first line          |
 | ~occult-summary-replace-alist~ | ~nil~       | Patterns the summary line displays differently |
@@ -69,6 +69,8 @@ Press ~e~ with point on a fold (or call ~M-x occult-edit-region~) to open the fo
 | ~occult-auto-reveal~           | ~nil~       | Auto-reveal mode: nil, echo, or expand         |
 | ~occult-edit-commit-key~       | ~"C-c C-c"~ | Key that commits an edit session               |
 | ~occult-edit-abort-key~        | ~"C-c C-k"~ | Key that aborts / closes an edit session       |
+
+¹ The appearance and feel of folds can drastically change based on this seemingly unimportant setting; I highly recommend picking a symbol that is visually appealing to you, and there are plenty of options to choose from - ~C-x 8 RET~ to find one. My personal preference is what's called double-ended multimap - ⧟ 
 
 ** Tidying up the summary line
 
