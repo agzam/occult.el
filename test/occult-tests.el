@@ -429,6 +429,24 @@ wherever a replacement covers the buffer text."
       (expect (buffer-substring-no-properties 1 22)
               :to-equal "Line 1\nLine 2\nLine 3\n"))))
 
+;;; Fold keymap
+
+(describe "occult-overlay-map"
+  (it "toggles on both forms of the Tab key"
+    (expect (lookup-key occult-overlay-map (kbd "TAB")) :to-be #'occult-toggle)
+    (expect (lookup-key occult-overlay-map [tab]) :to-be #'occult-toggle))
+
+  (it "wins over the buffer's own binding for either form"
+    (occult-test-with-buffer "Hello\nWorld\n"
+      (use-local-map (let ((map (make-sparse-keymap)))
+                       (define-key map [tab] #'ignore)
+                       (define-key map (kbd "TAB") #'ignore)
+                       map))
+      (occult-hide-region 1 13)
+      (goto-char 1)
+      (expect (key-binding [tab]) :to-be #'occult-toggle)
+      (expect (key-binding "\t") :to-be #'occult-toggle))))
+
 ;;; Revert persistence
 
 (describe "revert persistence"

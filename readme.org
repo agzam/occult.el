@@ -96,22 +96,22 @@ Evil users: ~/~ and ~?~ (~evil-ex-search-forward~ / ~evil-ex-search-backward~) a
 
 ** Evil fold bindings (=zc= / =zo= / =za=)
 
-The native evil fold commands can be advised to work with occult. When a visual selection or occult fold is present, they delegate to occult; otherwise they fall through to default behavior.
+Evil binds its fold commands in =evil-normal-state-map= only. In visual state =z= is a prefix holding scroll commands, so =zc= there is undefined, evil drops the sequence, and the next =c= runs =evil-change= and deletes the selection. Folding a selection therefore needs its own visual-state binding rather than advice on =evil-close-fold=:
 
-- =zc= / =zC= in visual state - create an occult fold from the selection
+#+begin_src emacs-lisp
+(with-eval-after-load 'evil
+  (evil-define-key 'visual 'global (kbd "zc") #'occult-toggle)
+  (evil-define-key 'visual 'global (kbd "za") #'occult-toggle))
+#+end_src
+
+The normal-state commands can be advised to delegate to occult when point is on a fold, and fall through to evil otherwise.
+
 - =zo= / =zO= on an occult fold - reveal it
-- =za= - toggle: create from visual selection or reveal existing fold
+- =za= - reveal the fold at point
 - =zR= - also reveals all occult folds alongside native folds
 
 #+begin_src emacs-lisp
 (with-eval-after-load 'evil
-  (dolist (fn '(evil-close-fold evil-close-fold-rec))
-    (advice-add fn :around
-                (lambda (fn &rest args)
-                  (if (evil-visual-state-p)
-                      (occult-hide-region (region-beginning) (region-end))
-                    (apply fn args)))))
-
   (dolist (fn '(evil-open-fold evil-open-fold-rec))
     (advice-add fn :around
                 (lambda (fn &rest args)
@@ -120,16 +120,20 @@ The native evil fold commands can be advised to work with occult. When a visual 
                       (occult-toggle)
                     (apply fn args)))))
 
+  ;; `evil-open-folds' signals a user-error in a buffer with no folding
+  ;; minor mode, which must not stop occult's own folds from opening.
   (advice-add 'evil-open-folds :around
               (lambda (fn &rest args)
-                (apply fn args)
-                (occult-reveal-all)))
+                (if (cl-find-if (lambda (o) (overlay-get o 'occult))
+                                (overlays-in (point-min) (point-max)))
+                    (progn (ignore-error user-error (apply fn args))
+                           (occult-reveal-all))
+                  (apply fn args))))
 
   (advice-add 'evil-toggle-fold :around
               (lambda (fn &rest args)
-                (if (or (evil-visual-state-p)
-                        (cl-find-if (lambda (o) (overlay-get o 'occult))
-                                    (overlays-at (point))))
+                (if (cl-find-if (lambda (o) (overlay-get o 'occult))
+                                (overlays-at (point)))
                     (occult-toggle)
                   (apply fn args)))))
 #+end_src

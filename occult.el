@@ -174,6 +174,11 @@ List of (BEG END CONTENT-HASH) tuples.")
 (defvar occult-overlay-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "TAB") #'occult-toggle)
+    ;; A graphical frame sends `tab', not ASCII 9, and
+    ;; `local-function-key-map' rewrites it to ASCII 9 only while nothing
+    ;; binds it.  A mode that binds `tab' would otherwise keep the Tab key
+    ;; away from the fold it is sitting on.
+    (define-key map [tab] #'occult-toggle)
     (define-key map (kbd "e") #'occult-edit-region)
     (define-key map [mouse-1] #'occult-toggle)
     map)
