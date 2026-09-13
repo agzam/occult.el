@@ -33,10 +33,11 @@ Available on [[https://melpa.org/#/occult][MELPA]]:
 
 ** Usage
 
-Three commands:
+Four commands:
 
 - ~occult-toggle~ - select a region and call it to collapse. Call it again with point on a fold to expand. TAB also toggles when point is on a fold.
 - ~occult-reveal-all~ - expand all folds in the current buffer.
+- ~occult-fold-noise~ - fold every stretch the buffer calls noise in one go; see [[*Folding noise][Folding noise]].
 - ~occult-edit-region~ - open the fold at point in a narrowed indirect buffer for editing. Bound to ~e~ on the fold keymap.
 
 Bind them however you like:
@@ -89,6 +90,23 @@ A fold whose first line reads ~Editing occult.el +8 -5 ✅ 0s~ then shows ~Editi
 ~occult-summary-line-prefix~ replaces the ~line-prefix~ the buffer draws at the start of that line. Modes draw indentation guides and collapsible-block markers there, and those are display properties rather than text, so no regexp can reach them. Setting the option to ~""~ drops the prefix from the summary line, and only from it.
 
 ~occult-indicator~ is buffer-local when set, so folds in a chat buffer can carry a different glyph from folds in a log.
+
+** Folding noise
+
+Some buffers grow stretches of text you read once and then want out of the way: source blocks in a long org document, tool calls and thoughts in an LLM chat, DEBUG lines in a log, command output in a shell. Tell occult what the noise looks like, and ~M-x occult-fold-noise~ folds every stretch of it in one go, each into its own fold with its first line as the summary. Both options are buffer-local, so an org buffer and a log can each say what noise means there.
+
+~occult-noise-regexps~ names the noise by pattern. A match is one stretch, widened to whole lines; matches that only blank lines separate merge into one fold, and so do matches that overlap. A regexp may span lines:
+
+#+begin_src emacs-lisp
+(add-hook 'org-mode-hook
+          (lambda ()
+            (setq occult-noise-regexps
+                  '("^[ \t]*#\\+begin_src\\(?:.*\n\\)*?[ \t]*#\\+end_src.*"))))
+#+end_src
+
+~occult-noise-regions-function~ names the noise by computation, for a mode where the noise is not a matter of text - a chat that marks its blocks with overlays, say. The function returns a list of ~(BEG . END)~ conses in buffer order and replaces the regexps.
+
+~occult-fold-noise~ folds every stretch in the buffer, or, with an active region or with BEG and END from Lisp, only the stretches reaching into those bounds - a chat can fold the turn that just finished and leave what you opened earlier alone. Running it again is cheap and changes nothing: a stretch a fold already hides is skipped. ~occult-reveal-all~ opens everything, and a single fold opens with TAB as usual.
 
 ** Search integration
 
@@ -155,6 +173,10 @@ Other Emacs folding packages. Most fold by language structure or indentation; oc
 * [[file:changelog.org][Changelog]].
 
 * License
+Copyright © 2026 Ag Ibragimov
+
+GPL-3.0-or-later. See [[file:LICENSE][LICENSE]].
+e
 Copyright © 2026 Ag Ibragimov
 
 GPL-3.0-or-later. See [[file:LICENSE][LICENSE]].

@@ -82,6 +82,23 @@ Non-interactive. Programmatic entry point for creating a fold.
 - Absorbs any existing folds overlapping the region: their bounds extend
   the new fold so no hidden content is lost.
 
+### `occult-fold-noise` (&optional beg end)
+
+Interactive. Folds every noise stretch of the buffer, or only the stretches
+reaching into `[beg, end)`; an active region supplies the bounds
+interactively.
+
+- Noise stretches come from `occult-noise-regions-function` when set,
+  otherwise from `occult-noise-regexps`; see "Noise folding".
+- Each stretch becomes one fold via `occult-hide-region`, so overlapping
+  folds are absorbed. A stretch that an existing fold already covers in
+  full is skipped, which makes a second run a no-op.
+- `mark-active` is bound to nil around the `occult-hide-region` calls, so a
+  Lisp caller running while the user selects text keeps the selection.
+  Called interactively, it deactivates the mark afterwards and reports the
+  count.
+- Returns the number of folds made in this call.
+
 ### `occult-edit-region`
 
 Open the fold at point in a narrowed indirect buffer for editing. Bound to
@@ -399,6 +416,48 @@ Controlled by `occult-auto-reveal`:
 
 isearch integration is always active regardless of this setting.
 
+## Noise Folding
+
+`occult-fold-noise` folds every stretch of a buffer that the buffer itself
+calls noise. Two buffer-local options say what that is:
+
+- `occult-noise-regexps`: a list of regexps. Every match of every regexp
+  is one stretch, widened to whole lines. A match that ends on a newline
+  stops at that line, not the next. A match of the empty string marks
+  nothing, and the search steps past it instead of matching it again.
+  The search honors `case-fold-search` and leaves the caller's match data
+  alone.
+- `occult-noise-regions-function`: a function called with no arguments in
+  the buffer, returning `(BEG . END)` conses in buffer order. When set it
+  replaces the regexps entirely; a chat mode that marks its blocks with
+  overlays names its stretches this way.
+
+Stretches are merged before folding: two stretches that overlap, or that
+only blank text separates, become one. Blank lines between two stretches
+therefore vanish into the fold, while a line of prose between them keeps
+them apart. The merge is what makes "all the consecutive noise folds into a
+single unit" hold whatever the regexps match individually.
+
+Folding then hands each merged stretch to `occult-hide-region`, with
+`mark-active` bound to nil so the user's selection survives a caller that
+runs while they select. A stretch that an existing fold already covers in
+full is skipped - a second run makes no new overlays and returns 0 - while
+a fold that overlaps a stretch only partly is absorbed by
+`occult-hide-region` as usual. With BEG and END, only the stretches that
+reach into `[beg, end)` are considered, so a caller can fold what just
+arrived and leave older folds the user opened alone.
+
+Interaction with org folding: org hides subtrees through `invisible`
+properties under `inhibit-modification-hooks`, so an occult fold inside a
+subtree survives `org-fold-hide-subtree` and shows again after
+`org-fold-show-all`; a fold made while the subtree is hidden keeps its
+geometry, since the head stops at a hidden run reaching the end of the
+line (see "Hidden prefixes").
+
+Cost: one regexp search per entry over the buffer, then one
+`occult-hide-region` per stretch. 2000 blocks in a 24k-line org buffer fold
+in well under a second.
+
 ## Revert-Buffer Persistence
 
 Folds survive `revert-buffer` (important for LLM chat buffers, eshell, etc.):
@@ -451,6 +510,8 @@ lost - which is the expected behavior.
 | `occult-summary-max-length`    | `80`         | Max chars from first line to show            |
 | `occult-summary-replace-alist` | `nil`        | Patterns the summary line displays differently |
 | `occult-summary-line-prefix`   | `nil`        | Prefix drawn at the start of the summary line |
+| `occult-noise-regexps`         | `nil`        | Regexps whose matches are noise (buffer-local) |
+| `occult-noise-regions-function` | `nil`       | Function returning noise stretches (buffer-local) |
 | `occult-auto-reveal`           | `nil`        | Auto-reveal mode: nil, echo, or expand       |
 | `occult-lighter`               | `" Occ"`     | Mode-line lighter (internal mode)            |
 | `occult-edit-lighter`          | `" OccEdit"` | Mode-line lighter inside an edit session     |

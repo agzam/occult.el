@@ -3,7 +3,12 @@
 
 Changes to the project, following Keep a Changelog conventions.
 
-* [1.4.1] - 2026-09-13
+* [1.5.0] - 2026-09-13
+
+** Added
+- ~occult-fold-noise~ - fold every stretch of noise in the buffer in one go, each into its own fold with its first line as the summary, or only the stretches reaching into the active region or into BEG and END from Lisp. A stretch a fold already hides is skipped, so running it again is cheap and changes nothing. The mark is left alone for Lisp callers, so a chat mode folding while the reader selects text does not lose the selection.
+- ~occult-noise-regexps~ - buffer-local regexps naming the noise. Each match is one stretch, widened to whole lines; matches that only blank lines separate merge into one fold, as do matches that overlap. A regexp may span lines, such as one matching a whole org source block.
+- ~occult-noise-regions-function~ - buffer-local function naming the noise by computation instead, for modes whose noise is not a matter of text; it returns ~(BEG . END)~ conses in buffer order.
 
 ** Changed
 - A fold survives a change that leaves its characters alone. ~put-text-property~ over a folded range - a chat mode re-protecting its history after every streamed chunk, a mode re-fontifying - used to remove the fold, since the modification hook removed it on any call. The hook now records ~buffer-chars-modified-tick~ before a change and removes the fold only when that tick moved, which an insertion, a deletion or a same-length replacement does and a property change does not.

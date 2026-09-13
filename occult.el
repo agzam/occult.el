@@ -5,7 +5,7 @@
 ;; Author: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Maintainer: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Created: March 25, 2026
-;; Version: 1.4.1
+;; Version: 1.5.0
 ;; Keywords: convenience
 ;; Homepage: https://github.com/agzam/occult.el
 ;; Package-Requires: ((emacs "29.1"))
@@ -92,6 +92,34 @@ draws alone.
 Buffer-local when set."
   :type '(choice (const :tag "Keep the buffer's own prefix" nil)
                  (string :tag "Draw this instead"))
+  :local t)
+
+(defcustom occult-noise-regexps nil
+  "Regexps whose matches are noise for `occult-fold-noise'.
+Each match is one stretch of noise, widened to whole lines.  Matches
+that only blank lines separate merge into one stretch, as do matches
+that overlap.  A regexp may span lines; one for an org source block
+is \"^[ \\t]*#\\\\+begin_src\\\\(?:.*\\n\\\\)*?[ \\t]*#\\\\+end_src.*\".  A
+match of the empty string marks nothing.  The search honors
+`case-fold-search'.
+
+Buffer-local when set: what is noise in a log is not what is noise in
+a chat."
+  :type '(repeat regexp)
+  :local t)
+
+(defcustom occult-noise-regions-function nil
+  "Function returning the noise stretches of the buffer for `occult-fold-noise'.
+Called with no arguments in the buffer; returns a list of (BEG . END)
+conses in buffer order.  Nil derives the stretches from
+`occult-noise-regexps'.  A mode whose noise is not a matter of text,
+such as a chat that marks its blocks with overlays, sets this instead
+of the regexps.  Stretches that only blank lines separate merge into
+one, as do stretches that overlap.
+
+Buffer-local when set."
+  :type '(choice (const :tag "Derive from occult-noise-regexps" nil)
+                 function)
   :local t)
 
 (defcustom occult-auto-reveal nil
@@ -572,7 +600,92 @@ are created and deactivates when the last fold is removed."
              (null (occult--overlays-in (point-min) (point-max))))
     (occult--mode -1)))
 
+;;; Noise folding
+
+(defun occult--noise-regexp-regions ()
+  "Whole-line regions `occult-noise-regexps' match, in search order."
+  (let (regions)
+    (save-excursion
+      (save-match-data
+        (dolist (regexp occult-noise-regexps)
+          (goto-char (point-min))
+          (catch 'done
+            (while (re-search-forward regexp nil t)
+              (let ((beg (match-beginning 0))
+                    (end (match-end 0)))
+                (cond
+                 ((= beg end)
+                  ;; an empty match marks nothing, and staying put would
+                  ;; match it again forever
+                  (if (eobp) (throw 'done nil) (forward-char 1)))
+                 (t
+                  (push (cons (progn (goto-char beg) (line-beginning-position))
+                              (progn (goto-char end)
+                                     ;; a match ending on a newline stops
+                                     ;; at that line, not the next one
+                                     (when (bolp) (backward-char 1))
+                                     (line-end-position)))
+                        regions)
+                  (goto-char end)))))))))
+    regions))
+
+(defun occult--noise-merge (regions)
+  "Merge REGIONS that overlap or that only blank text separates.
+REGIONS are (BEG . END) conses in any order; the result is fresh
+conses sorted by start."
+  (let (merged)
+    (dolist (region (sort (copy-sequence regions)
+                          (lambda (a b) (< (car a) (car b)))))
+      (let ((last (car merged)))
+        (if (and last
+                 (or (<= (car region) (cdr last))
+                     (string-blank-p
+                      (buffer-substring-no-properties (cdr last) (car region)))))
+            (setcdr last (max (cdr last) (cdr region)))
+          (push (cons (car region) (cdr region)) merged))))
+    (nreverse merged)))
+
+(defun occult--noise-regions ()
+  "Noise stretches of the buffer, merged, in buffer order."
+  (occult--noise-merge
+   (if occult-noise-regions-function
+       (funcall occult-noise-regions-function)
+     (occult--noise-regexp-regions))))
+
+(defun occult--fold-covering (beg end)
+  "The fold that already hides all of BEG..END, or nil."
+  (cl-find-if (lambda (ov)
+                (and (<= (overlay-start ov) beg)
+                     (<= end (overlay-end ov))))
+              (occult--overlays-in beg end)))
+
 ;;; Public commands
+
+;;;###autoload
+(defun occult-fold-noise (&optional beg end)
+  "Fold every stretch of noise, or the ones reaching into BEG..END.
+Noise is what `occult-noise-regexps' matches or what
+`occult-noise-regions-function' returns.  Interactively, an active
+region supplies BEG and END.  Each stretch becomes one fold whose
+summary is its first line.  A stretch a fold already hides is left as
+it is; a fold overlapping a stretch is absorbed into the new one.  The
+mark is left alone, so a caller running while the reader selects text
+does not lose the selection.  Returns the number of folds made."
+  (interactive (when (use-region-p) (list (region-beginning) (region-end))))
+  (let ((beg (or beg (point-min)))
+        (end (or end (point-max)))
+        (folded 0))
+    (dolist (region (occult--noise-regions))
+      (when (and (< (car region) end)
+                 (< beg (cdr region))
+                 (not (occult--fold-covering (car region) (cdr region))))
+        (let ((mark-active nil))
+          (when (occult-hide-region (car region) (cdr region))
+            (cl-incf folded)))))
+    (when (called-interactively-p 'any)
+      (deactivate-mark)
+      (message "Folded %d stretch%s of noise" folded (if (= folded 1) "" "es")))
+    folded))
 
 ;;;###autoload
 (defun occult-hide-region (beg end)
