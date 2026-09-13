@@ -215,17 +215,30 @@ so leading blank lines do not consume any of the budget."
     (min (line-end-position) end (+ beg occult-summary-max-length))))
 
 (defun occult--leading-whitespace (beg end)
-  "Return the first non-whitespace position in the range BEG..END.
+  "Return the position where the visible summary of BEG..END starts.
 Scans ASCII whitespace (space, tab, newline, carriage return,
 form feed, vertical tab) forward from BEG, stopping at END at
 the latest.  Returns END if the range is entirely whitespace.
 
-Used by `occult--create-overlay' to skip leading blank lines
-when computing where the visible summary begins, so the summary
-is not wasted on empty leading whitespace."
+Text that an `invisible' property hides in front of the line's
+first visible word is skipped as well, whitespace after it
+included - the details `dired-hide-details-mode' hides before a
+file name.  The display engine draws the head's indicator where
+the head ends, and skips that position when hidden text follows
+it, so the head has to end on text the reader can see.  Only a
+run that ends before the end of its line counts: a run reaching
+the end of the line is a hidden line, not a hidden prefix, and
+its visibility is the buffer's to change after the fold is made."
   (save-excursion
     (goto-char beg)
     (skip-chars-forward " \t\n\r\f\v" end)
+    (let ((limit (min end (line-end-position))))
+      (cl-loop while (and (< (point) limit) (invisible-p (point)))
+               for run-end = (next-single-char-property-change
+                              (point) 'invisible nil limit)
+               while (< run-end limit)
+               do (goto-char run-end)
+               (skip-chars-forward " \t" limit)))
     (point)))
 
 (defun occult--ellipsis (body-text)
@@ -314,12 +327,11 @@ whitespace to hide; in that case it is a zero-length overlay at
 BEG.  Keeping the indicator on a single overlay (head) gives a
 uniform rendering rule and avoids the ordering ambiguity that
 arises when two overlays starting at the same position both
-carry a `before-string'.  The head erases the whitespace it covers
-with an empty `display' string rather than `invisible': the display
-engine draws an invisible overlay's `before-string' where that
-overlay ends, and when text a text property hides follows the
-whitespace - a Dired listing with details hidden - the iterator
-jumps past that end and the indicator is never drawn.
+carry a `before-string'.  The display engine draws an invisible
+overlay's `before-string' where that overlay ends, so the head ends
+on text the reader can see: `occult--leading-whitespace' carries it
+past a hidden prefix of the line, such as the details a Dired
+listing hides before a file name.
 
 `occult--decorate-summary' adds an overlay per
 `occult-summary-replace-alist' match and one for
@@ -349,14 +361,14 @@ Returns the parent overlay."
     (overlay-put parent 'modification-hooks (list #'occult--modification-hook))
     ;; Head overlay - always present (zero-length when no leading
     ;; whitespace) so that the indicator has a single, uniform home.
-    ;; An empty `display' erases the whitespace it covers while the
-    ;; `before-string' still draws at the head's start; `invisible'
-    ;; would move the indicator to the head's end, which the display
-    ;; engine skips when hidden text follows.
+    ;; `invisible 'occult' hides any leading whitespace it covers;
+    ;; on a zero-length head it is a no-op but harmless.  Hiding with
+    ;; `display' instead would put a display string at the start of
+    ;; the line, and `vertical-motion' backs point up past such a
+    ;; line, so upward line motion would skip the summary.
     (overlay-put head 'occult-parent parent)
     (overlay-put head 'before-string indicator)
-    (when (< beg head-split)
-      (overlay-put head 'display ""))
+    (overlay-put head 'invisible 'occult)
     (overlay-put head 'evaporate nil)
     ;; Body overlay - hides everything after the visible portion and
     ;; is the primary surface for isearch reveal.

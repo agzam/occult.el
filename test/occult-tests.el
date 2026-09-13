@@ -71,6 +71,39 @@ wherever a replacement covers the buffer text."
 
 ;;; Trim leading whitespace
 
+(describe "occult--leading-whitespace with hidden text"
+  (it "skips a hidden prefix and the whitespace after it"
+    (occult-test-with-buffer "  HIDDEN  word\n"
+      (add-to-invisibility-spec 'tp)
+      (put-text-property 3 9 'invisible 'tp)
+      (expect (occult--leading-whitespace 1 15) :to-be 11)))
+
+  (it "skips consecutive hidden runs"
+    (occult-test-with-buffer "  ab cd word\n"
+      (add-to-invisibility-spec 'a)
+      (add-to-invisibility-spec 'b)
+      (put-text-property 3 5 'invisible 'a)
+      (put-text-property 5 8 'invisible 'b)
+      (expect (occult--leading-whitespace 1 13) :to-be 9)))
+
+  (it "stops at a run that reaches the end of the line"
+    (occult-test-with-buffer "  HIDDENLINE\nvisible\n"
+      (add-to-invisibility-spec 'tp)
+      (put-text-property 3 13 'invisible 'tp)
+      (expect (occult--leading-whitespace 1 21) :to-be 3)))
+
+  (it "stops at a run that reaches the end of the fold"
+    (occult-test-with-buffer "  HIDDEN visible\n"
+      (add-to-invisibility-spec 'tp)
+      (put-text-property 3 9 'invisible 'tp)
+      (expect (occult--leading-whitespace 1 6) :to-be 3)))
+
+  (it "ignores hidden text whose value is not in the invisibility spec"
+    (occult-test-with-buffer "  SHOWN word\n"
+      (setq buffer-invisibility-spec '(other))
+      (put-text-property 3 8 'invisible 'not-in-spec)
+      (expect (occult--leading-whitespace 1 13) :to-be 3))))
+
 (describe "occult--leading-whitespace"
   (it "does nothing for no leading whitespace"
     (occult-test-with-buffer "line with 17 char"
@@ -221,38 +254,60 @@ wherever a replacement covers the buffer text."
              (head (occult-test--head-overlay parent)))
         (expect head :to-be-truthy)
         (expect (overlay-end head) :to-be 5)
-        (expect (overlay-get head 'display) :to-equal ""))))
+        (expect (overlay-get head 'invisible) :to-equal 'occult))))
 
-  (it "erases leading whitespace with display, never with invisible"
-    ;; The display engine draws an invisible overlay's before-string
-    ;; where the overlay ends, and skips that end when hidden text
-    ;; follows; the indicator then never appears.
+  (it "hides leading whitespace with invisible, never with display"
+    ;; `vertical-motion' backs point up past a line that starts with a
+    ;; display string, so a head hidden with `display' makes upward
+    ;; line motion skip the summary line.
     (occult-test-with-buffer " \t\r\nLine 1\nLine 2\nLine 3\n"
       (occult-hide-region 1 26)
       (let ((head (occult-test--head-overlay (occult--overlay-at-point))))
-        (expect (overlay-get head 'invisible) :to-be nil)
-        (expect (invisible-p 1) :to-be nil))))
+        (expect (overlay-get head 'display) :to-be nil)
+        (expect (invisible-p 1) :to-be-truthy))))
 
-  (it "keeps the indicator when hidden text follows the leading whitespace"
+  (it "ends the head on visible text when hidden details follow the whitespace"
     ;; A dired listing with details hidden: the line's first character
     ;; is visible, the details after it carry an `invisible' text
-    ;; property, and the fold starts at the line's beginning.
+    ;; property, and the fold starts at the line's beginning.  The
+    ;; display engine draws the indicator where the head ends, so the
+    ;; head runs past the details and the whitespace after them.
     (occult-test-with-buffer "  drwxr-xr-x 2 me me 4096 name\nLine 2\nLine 3\n"
       (add-to-invisibility-spec 'detail)
       (put-text-property 2 26 'invisible 'detail)
       (occult-hide-region 1 40)
-      (let ((head (occult-test--head-overlay (occult--overlay-at-point))))
+      (let* ((parent (occult--overlay-at-point))
+             (head (occult-test--head-overlay parent))
+             (body (occult-test--body-overlay parent)))
         (expect (overlay-start head) :to-be 1)
-        (expect (overlay-end head) :to-be 3)
+        (expect (overlay-end head) :to-be 27)
         (expect (overlay-get head 'before-string) :to-match "📎")
-        (expect (overlay-get head 'display) :to-equal "")
-        (expect (overlay-get head 'invisible) :to-be nil))))
+        (expect (overlay-get head 'invisible) :to-equal 'occult)
+        (expect (overlay-start body) :to-be 31)
+        (expect (occult-test--summary-text parent) :to-equal "name"))))
 
-  (it "leaves an empty head without a display property"
-    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
-      (occult-hide-region 1 22)
+  (it "leaves a hidden line to the summary"
+    ;; A whole line hidden by the buffer - a folded org subtree, an
+    ;; outline body - may become visible again after the fold is made,
+    ;; so the head must not swallow it.
+    (occult-test-with-buffer "  Line 1\nLine 2\nLine 3\n"
+      (add-to-invisibility-spec 'fold)
+      (put-text-property 3 16 'invisible 'fold)
+      (occult-hide-region 1 23)
       (let ((head (occult-test--head-overlay (occult--overlay-at-point))))
-        (expect (overlay-get head 'display) :to-be nil))))
+        (expect (overlay-end head) :to-be 3))))
+
+  (it "measures the summary cap from the visible start after a hidden prefix"
+    (let ((occult-summary-max-length 4))
+      (occult-test-with-buffer "  HIDDEN word and more\nLine 2\n"
+        (add-to-invisibility-spec 'tp)
+        (put-text-property 3 9 'invisible 'tp)
+        (occult-hide-region 1 30)
+        (let* ((parent (occult--overlay-at-point))
+               (head (occult-test--head-overlay parent))
+               (body (occult-test--body-overlay parent)))
+          (expect (overlay-end head) :to-be 10)
+          (expect (overlay-start body) :to-be 14)))))
 
   (it "creates a zero-length head overlay when there is no leading whitespace"
     (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"

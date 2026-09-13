@@ -6,7 +6,7 @@ Changes to the project, following Keep a Changelog conventions.
 * [1.4.1] - 2026-09-13
 
 ** Fixed
-- The indicator shows on a fold that starts at the beginning of a line whose text a text property hides, such as a dired listing with ~dired-hide-details-mode~ on. The head overlay hid the leading whitespace with ~invisible~, and the display engine draws an invisible overlay's ~before-string~ where that overlay ends - a position it skips when hidden text follows. The head now erases the whitespace with an empty ~display~ string instead, so the indicator is drawn at the head's start. Folds that begin on text, and folds over leading blank lines, look as before.
+- The indicator shows on a fold that starts at the beginning of a line whose text a text property hides in front of its first word, such as a dired listing with ~dired-hide-details-mode~ on, folded line-wise. The display engine draws an invisible overlay's ~before-string~ where that overlay ends, and the head overlay ended inside the hidden details - a position the iterator skips. The head now runs past such a hidden prefix, and the whitespace after it, so it ends on text the reader can see and the indicator is drawn in front of the file name. A run of hidden text that reaches the end of the line - a folded org subtree, an outline body - is left alone, since the buffer may show it again after the fold is made. Folds that begin on visible text, and folds over leading blank lines, are unchanged, and so is point motion across a fold.
 
 * [1.4.0] - 2026-09-11
 

@@ -27,16 +27,12 @@ buffer text.
   cannot drop the parent before the modification-hook gets a chance to
   clean up head and body.
 - Head overlay spans `[beg, head-split)` where `head-split` is the first
-  non-whitespace position in the region. It carries the indicator glyph as
-  `before-string` and, when it covers any whitespace, erases that
-  whitespace with an empty `display` string. It never carries
-  `invisible`: the display engine draws an invisible overlay's
-  `before-string` where the overlay ends, and when text a text property
-  hides follows the whitespace (a dired listing with details hidden) the
-  iterator jumps past that end and the indicator is lost. The head is
-  always created, even as a zero-length overlay at `beg` when there is no
-  leading whitespace; this gives the indicator a single, uniform host
-  regardless of input shape.
+  position of the region's visible summary text: past leading
+  whitespace, and past a hidden prefix of that line (see "Hidden
+  prefixes" below). It carries the indicator glyph as `before-string`
+  and `invisible 'occult`. The head is always created, even as a
+  zero-length overlay at `beg` when there is no leading whitespace; this
+  gives the indicator a single, uniform host regardless of input shape.
 - Body overlay spans `[body-split, end)` where `body-split` is the first
   line break after `head-split`, the fold end, or
   `head-split + occult-summary-max-length` characters from `head-split`,
@@ -207,19 +203,42 @@ Spans `[beg, head-split)`. Always created, even as a zero-length overlay
 at `beg` when there is no leading whitespace, so that the indicator has a
 single, uniform host.
 
-| Property          | Value                                            |
-|-------------------|--------------------------------------------------|
-| `occult-parent`   | Back-reference to parent overlay                 |
-| `before-string`   | Indicator string                                 |
-| `display`         | `""` when the head covers whitespace, else unset |
-| `evaporate`       | `nil`                                            |
+| Property          | Value                                |
+|-------------------|--------------------------------------|
+| `occult-parent`   | Back-reference to parent overlay     |
+| `invisible`       | `'occult`                            |
+| `before-string`   | Indicator string                     |
+| `evaporate`       | `nil`                                |
 
-The head is never `invisible`. An invisible overlay's `before-string` is
-drawn at the overlay's end, and a `display` property on such an overlay
-draws it at the start as well, so the indicator would appear twice; the
-empty `display` string alone erases the whitespace and keeps the
-indicator at the head's start, where the display engine stops even when
-hidden text follows.
+The head hides with `invisible`, never with `display`. `vertical-motion`
+backs point up past a line that starts with a display string, and
+`line-move` uses it for the last step of every upward move, so a head
+hidden with an empty `display` string makes `previous-line` and evil's
+`k` skip the summary line.
+
+### Hidden prefixes
+
+The display engine draws an invisible overlay's `before-string` where
+that overlay ends. When text hidden by an `invisible` text property
+follows the head's whitespace - a dired listing with
+`dired-hide-details-mode` on hides everything between the leading
+spaces and the file name - the iterator skips the head's end together
+with the hidden run, and the indicator is never drawn.
+
+`occult--leading-whitespace` therefore carries `head-split` past such a
+run, and past the whitespace after it, so the head ends on text the
+reader can see and the indicator is drawn in front of it. Only a run
+that ends before the end of its line counts. A run reaching the end of
+the line is a hidden line - a folded org subtree, an outline body, a
+hidden magit section - not a hidden prefix, and the buffer may show it
+again after the fold is made; the head leaves it to the summary, as it
+always did. `next-single-char-property-change` finds the run's end, so
+overlays and text properties both count, against the buffer's
+`buffer-invisibility-spec` via `invisible-p`.
+
+The consequence to know about: a hidden prefix skipped this way stays
+hidden on the summary line even if the buffer shows it again later
+(details toggled back on in dired), until the fold is revealed.
 
 ### Body overlay
 
@@ -258,18 +277,19 @@ overlay spans `[beg, body-split)`, because the display engine reads
 The visible portion of a folded region is live buffer text between
 `head-split` and `body-split`:
 
-- `head-split` = first non-whitespace position in the region (leading
-  blank lines and other ASCII whitespace are hidden by the head overlay)
+- `head-split` = first visible non-whitespace position in the region
+  (leading blank lines and other ASCII whitespace are hidden by the head
+  overlay, and so is a hidden prefix of the summary line - see "Hidden
+  prefixes")
 - `body-split = min(line-end-from-head-split, end, head-split + occult-summary-max-length)`
 
-The head overlay erases `[beg, head-split)` with an empty `display`
-string and prepends the indicator via its `before-string`. The body
-overlay hides `[body-split, end)` with `invisible 'occult` and prepends
-`occult-ellipsis` via its `before-string`.
+The head overlay hides `[beg, head-split)` and prepends the indicator via
+its `before-string`. The body overlay hides `[body-split, end)` and
+prepends `occult-ellipsis` via its `before-string`.
 
-The body keeps `invisible` because isearch opens folds through it. Its
-`before-string` is therefore drawn at the fold's end, which is fine as
-long as that position is visible; a fold that ends exactly where text a
+Both strings are drawn where their overlay ends, since both overlays
+are invisible. The head's end is visible text by construction. The
+body's end is the fold's end, and a fold that ends exactly where text a
 text property hides begins loses its ellipsis and the line break the
 ellipsis carries. Line-wise selections end at a line's first character,
 so this does not come up in practice.
