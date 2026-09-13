@@ -190,12 +190,22 @@ Spans `[beg, end)`. Owns the face, keymap, and modification-hook.
 | `keymap`             | TAB/mouse-1 toggle the fold; `e` opens it for editing  |
 | `help-echo`          | "Press TAB to expand"                                  |
 | `evaporate`          | `nil`                                                  |
-| `modification-hooks` | Remove the fold if underlying text is edited           |
+| `modification-hooks` | Remove the fold when the characters under it change    |
+| `occult-chars-tick`  | `buffer-chars-modified-tick` recorded before a change  |
 
 Parent no longer carries `before-string`; the indicator lives on the head
 overlay so that its placement is uniform regardless of leading whitespace.
 Parent is non-evaporating so an edit cannot drop it before the
 modification-hook runs and cleans up head and body.
+
+The hook runs before and after every change that touches the fold. The
+before call records `buffer-chars-modified-tick` on the parent; the after
+call removes the fold only when the tick moved. A property-only change -
+`put-text-property` over the range, a mode re-fontifying or re-protecting
+its text - bumps `buffer-modified-tick` alone and keeps the fold with its
+decorations. An insertion, a deletion or a same-length replacement
+(`subst-char-in-region`) moves the characters tick and removes the fold.
+Changes made under `inhibit-modification-hooks` reach neither call.
 
 ### Head overlay
 

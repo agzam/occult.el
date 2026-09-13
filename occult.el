@@ -350,7 +350,9 @@ Returns the parent overlay."
     ;; Parent overlay - spans the whole fold and owns the face, keymap,
     ;; and modification-hook.  Non-evaporating so that an edit which
     ;; collapses the region does not drop the parent before the
-    ;; modification-hook has a chance to clean up head and body.
+    ;; modification-hook has a chance to clean up head and body.  The
+    ;; hook keeps the fold through property-only changes, so a mode
+    ;; that re-fontifies or re-protects its text leaves folds alone.
     (overlay-put parent 'occult t)
     (overlay-put parent 'occult-body body)
     (overlay-put parent 'occult-head head)
@@ -426,10 +428,22 @@ When HIDE-P is non-nil, re-hide.  Otherwise, reveal."
 ;;; Modification hook
 
 (defun occult--modification-hook (ov after-p &rest _args)
-  "Delete fold OV and its body when text is modified.
-Only acts on the after-modification call (AFTER-P non-nil)."
-  (when (and after-p (overlay-buffer ov))
-    (occult--delete-fold ov)))
+  "Remove fold OV when the characters under it change.
+Emacs calls this before and after every change touching the fold.
+The before call (AFTER-P nil) records `buffer-chars-modified-tick'
+on OV; the after call removes the fold only when that tick moved.
+A change that leaves the characters alone - `put-text-property'
+over the range, a mode re-fontifying or re-protecting its text -
+bumps `buffer-modified-tick' alone and keeps the fold.  An
+insertion, a deletion or a same-length replacement moves the
+characters tick and removes the fold, head and body included."
+  (cond
+   ((not after-p)
+    (overlay-put ov 'occult-chars-tick (buffer-chars-modified-tick)))
+   ((and (overlay-buffer ov)
+         (not (eql (overlay-get ov 'occult-chars-tick)
+                   (buffer-chars-modified-tick))))
+    (occult--delete-fold ov))))
 
 ;;; Revert-buffer persistence
 
