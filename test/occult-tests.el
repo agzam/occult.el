@@ -221,7 +221,38 @@ wherever a replacement covers the buffer text."
              (head (occult-test--head-overlay parent)))
         (expect head :to-be-truthy)
         (expect (overlay-end head) :to-be 5)
-        (expect (overlay-get head 'invisible) :to-equal 'occult))))
+        (expect (overlay-get head 'display) :to-equal ""))))
+
+  (it "erases leading whitespace with display, never with invisible"
+    ;; The display engine draws an invisible overlay's before-string
+    ;; where the overlay ends, and skips that end when hidden text
+    ;; follows; the indicator then never appears.
+    (occult-test-with-buffer " \t\r\nLine 1\nLine 2\nLine 3\n"
+      (occult-hide-region 1 26)
+      (let ((head (occult-test--head-overlay (occult--overlay-at-point))))
+        (expect (overlay-get head 'invisible) :to-be nil)
+        (expect (invisible-p 1) :to-be nil))))
+
+  (it "keeps the indicator when hidden text follows the leading whitespace"
+    ;; A dired listing with details hidden: the line's first character
+    ;; is visible, the details after it carry an `invisible' text
+    ;; property, and the fold starts at the line's beginning.
+    (occult-test-with-buffer "  drwxr-xr-x 2 me me 4096 name\nLine 2\nLine 3\n"
+      (add-to-invisibility-spec 'detail)
+      (put-text-property 2 26 'invisible 'detail)
+      (occult-hide-region 1 40)
+      (let ((head (occult-test--head-overlay (occult--overlay-at-point))))
+        (expect (overlay-start head) :to-be 1)
+        (expect (overlay-end head) :to-be 3)
+        (expect (overlay-get head 'before-string) :to-match "📎")
+        (expect (overlay-get head 'display) :to-equal "")
+        (expect (overlay-get head 'invisible) :to-be nil))))
+
+  (it "leaves an empty head without a display property"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
+      (occult-hide-region 1 22)
+      (let ((head (occult-test--head-overlay (occult--overlay-at-point))))
+        (expect (overlay-get head 'display) :to-be nil))))
 
   (it "creates a zero-length head overlay when there is no leading whitespace"
     (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"

@@ -28,10 +28,15 @@ buffer text.
   clean up head and body.
 - Head overlay spans `[beg, head-split)` where `head-split` is the first
   non-whitespace position in the region. It carries the indicator glyph as
-  `before-string` and `invisible 'occult`. The head is always created,
-  even as a zero-length overlay at `beg` when there is no leading
-  whitespace; this gives the indicator a single, uniform host regardless
-  of input shape.
+  `before-string` and, when it covers any whitespace, erases that
+  whitespace with an empty `display` string. It never carries
+  `invisible`: the display engine draws an invisible overlay's
+  `before-string` where the overlay ends, and when text a text property
+  hides follows the whitespace (a dired listing with details hidden) the
+  iterator jumps past that end and the indicator is lost. The head is
+  always created, even as a zero-length overlay at `beg` when there is no
+  leading whitespace; this gives the indicator a single, uniform host
+  regardless of input shape.
 - Body overlay spans `[body-split, end)` where `body-split` is the first
   line break after `head-split`, the fold end, or
   `head-split + occult-summary-max-length` characters from `head-split`,
@@ -202,12 +207,19 @@ Spans `[beg, head-split)`. Always created, even as a zero-length overlay
 at `beg` when there is no leading whitespace, so that the indicator has a
 single, uniform host.
 
-| Property          | Value                                |
-|-------------------|--------------------------------------|
-| `occult-parent`   | Back-reference to parent overlay     |
-| `invisible`       | `'occult`                            |
-| `before-string`   | Indicator string                     |
-| `evaporate`       | `nil`                                |
+| Property          | Value                                            |
+|-------------------|--------------------------------------------------|
+| `occult-parent`   | Back-reference to parent overlay                 |
+| `before-string`   | Indicator string                                 |
+| `display`         | `""` when the head covers whitespace, else unset |
+| `evaporate`       | `nil`                                            |
+
+The head is never `invisible`. An invisible overlay's `before-string` is
+drawn at the overlay's end, and a `display` property on such an overlay
+draws it at the start as well, so the indicator would appear twice; the
+empty `display` string alone erases the whitespace and keeps the
+indicator at the head's start, where the display engine stops even when
+hidden text follows.
 
 ### Body overlay
 
@@ -250,9 +262,17 @@ The visible portion of a folded region is live buffer text between
   blank lines and other ASCII whitespace are hidden by the head overlay)
 - `body-split = min(line-end-from-head-split, end, head-split + occult-summary-max-length)`
 
-The head overlay hides `[beg, head-split)` and prepends the indicator via
-its `before-string`. The body overlay hides `[body-split, end)` and
-prepends `occult-ellipsis` via its `before-string`.
+The head overlay erases `[beg, head-split)` with an empty `display`
+string and prepends the indicator via its `before-string`. The body
+overlay hides `[body-split, end)` with `invisible 'occult` and prepends
+`occult-ellipsis` via its `before-string`.
+
+The body keeps `invisible` because isearch opens folds through it. Its
+`before-string` is therefore drawn at the fold's end, which is fine as
+long as that position is visible; a fold that ends exactly where text a
+text property hides begins loses its ellipsis and the line break the
+ellipsis carries. Line-wise selections end at a line's first character,
+so this does not come up in practice.
 
 The ellipsis ends with a line break only when the hidden text ends with
 one (`occult--ellipsis`). When the fold stops at end of line with the

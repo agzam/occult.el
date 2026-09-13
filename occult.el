@@ -5,7 +5,7 @@
 ;; Author: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Maintainer: Ag Ibragimov <agzam.ibragimov@gmail.com>
 ;; Created: March 25, 2026
-;; Version: 1.4.0
+;; Version: 1.4.1
 ;; Keywords: convenience
 ;; Homepage: https://github.com/agzam/occult.el
 ;; Package-Requires: ((emacs "29.1"))
@@ -314,7 +314,12 @@ whitespace to hide; in that case it is a zero-length overlay at
 BEG.  Keeping the indicator on a single overlay (head) gives a
 uniform rendering rule and avoids the ordering ambiguity that
 arises when two overlays starting at the same position both
-carry a `before-string'.
+carry a `before-string'.  The head erases the whitespace it covers
+with an empty `display' string rather than `invisible': the display
+engine draws an invisible overlay's `before-string' where that
+overlay ends, and when text a text property hides follows the
+whitespace - a Dired listing with details hidden - the iterator
+jumps past that end and the indicator is never drawn.
 
 `occult--decorate-summary' adds an overlay per
 `occult-summary-replace-alist' match and one for
@@ -344,11 +349,14 @@ Returns the parent overlay."
     (overlay-put parent 'modification-hooks (list #'occult--modification-hook))
     ;; Head overlay - always present (zero-length when no leading
     ;; whitespace) so that the indicator has a single, uniform home.
-    ;; `invisible 'occult' hides any leading whitespace it covers;
-    ;; on a zero-length head it is a no-op but harmless.
+    ;; An empty `display' erases the whitespace it covers while the
+    ;; `before-string' still draws at the head's start; `invisible'
+    ;; would move the indicator to the head's end, which the display
+    ;; engine skips when hidden text follows.
     (overlay-put head 'occult-parent parent)
     (overlay-put head 'before-string indicator)
-    (overlay-put head 'invisible 'occult)
+    (when (< beg head-split)
+      (overlay-put head 'display ""))
     (overlay-put head 'evaporate nil)
     ;; Body overlay - hides everything after the visible portion and
     ;; is the primary surface for isearch reveal.
