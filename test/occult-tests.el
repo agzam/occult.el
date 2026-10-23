@@ -515,6 +515,73 @@ wherever a replacement covers the buffer text."
       (expect (buffer-substring-no-properties 1 22)
               :to-equal "Line 1\nLine 2\nLine 3\n"))))
 
+;;; Modification hook
+
+(describe "occult--modification-hook"
+  (it "keeps the fold through put-text-property over its range"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
+      (let ((parent (progn (occult-hide-region 1 22) (occult--overlay-at-point))))
+        (put-text-property 1 22 'read-only t)
+        (expect (overlay-buffer parent) :to-be-truthy)
+        (expect (overlay-buffer (occult-test--head-overlay parent)) :to-be-truthy)
+        (expect (overlay-buffer (occult-test--body-overlay parent)) :to-be-truthy)
+        (expect (occult-test--fold-count) :to-equal 1))))
+
+  (it "keeps the fold through add and remove of properties on part of it"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
+      (let ((parent (progn (occult-hide-region 1 22) (occult--overlay-at-point))))
+        (add-text-properties 8 14 '(face bold fontified t))
+        (remove-text-properties 8 14 '(face nil))
+        (expect (overlay-buffer parent) :to-be-truthy)
+        (expect (occult-test--fold-count) :to-equal 1))))
+
+  (it "keeps its decorations through a property change"
+    (occult-test-with-buffer "Line 1 ✅ 0s\nLine 2\nLine 3\n"
+      (setq-local occult-summary-replace-alist '((" ✅ 0s" . "")))
+      (let ((parent (progn (occult-hide-region 1 27) (occult--overlay-at-point))))
+        (put-text-property 1 27 'read-only t)
+        (expect (occult-test--summary-text parent) :to-equal "Line 1")
+        (expect (seq-every-p #'overlay-buffer
+                             (overlay-get parent 'occult-summary-overlays))
+                :to-be-truthy))))
+
+  (it "removes the fold on an insertion inside it"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
+      (let ((parent (progn (occult-hide-region 1 22) (occult--overlay-at-point))))
+        (goto-char 10)
+        (insert "X")
+        (expect (overlay-buffer parent) :to-be nil)
+        (expect (occult-test--fold-count) :to-equal 0))))
+
+  (it "removes the fold on a deletion inside it"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
+      (let ((parent (progn (occult-hide-region 1 22) (occult--overlay-at-point))))
+        (delete-region 8 10)
+        (expect (overlay-buffer parent) :to-be nil)
+        (expect (occult-test--fold-count) :to-equal 0))))
+
+  (it "removes the fold on a same-length replacement"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
+      (let ((parent (progn (occult-hide-region 1 22) (occult--overlay-at-point))))
+        (subst-char-in-region 8 14 ?L ?X)
+        (expect (overlay-buffer parent) :to-be nil)
+        (expect (occult-test--fold-count) :to-equal 0))))
+
+  (it "still removes the fold on a text change after a property change"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
+      (let ((parent (progn (occult-hide-region 1 22) (occult--overlay-at-point))))
+        (put-text-property 1 22 'fontified t)
+        (expect (occult-test--fold-count) :to-equal 1)
+        (goto-char 10)
+        (insert "X")
+        (expect (overlay-buffer parent) :to-be nil))))
+
+  (it "removes the fold on an after call with no recorded tick"
+    (occult-test-with-buffer "Line 1\nLine 2\nLine 3\n"
+      (let ((parent (progn (occult-hide-region 1 22) (occult--overlay-at-point))))
+        (occult--modification-hook parent t 1 22 21)
+        (expect (overlay-buffer parent) :to-be nil)))))
+
 ;;; Fold keymap
 
 (describe "occult-overlay-map"
